@@ -11,4 +11,4 @@ module github.com/ev-panda/evpanda-go
 // matrix and README to match.
 go 1.24
 
-require github.com/klauspost/compress v1.18.6
+require github.com/klauspost/compress v1.19.0
