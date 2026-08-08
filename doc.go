@@ -6,20 +6,21 @@
 // never panic, memory is bounded, and under stress or network failure it
 // drops data rather than degrading the application.
 //
-// Capture via the [Client] returned by [Start]:
+// The protocol is the client: [StartOCPI] returns an [OCPIClient],
+// [StartOCPP] an [OCPPClient] — pick the one your service speaks.
 //
 //	// APIKey omitted ⇒ read from the EVPANDA_API_KEY env var.
-//	panda, err := evpanda.Start(evpanda.Config{
-//		NetworkType: evpanda.ProtocolOCPI,
-//		Endpoint:    "https://ingest.evpanda.io",
+//	panda, err := evpanda.StartOCPI(evpanda.OCPIConfig{
+//		BaseConfig: evpanda.BaseConfig{Endpoint: "https://ingest.evpanda.io"},
 //	})
 //	if err != nil {
 //		log.Printf("evpanda: %v (running inert)", err)
 //	}
 //	defer panda.Close()
 //
-//	panda.CaptureOCPI(ctx, evpanda.OCPIMessage{ /* ... */ })
+//	panda.CaptureInbound(evpanda.OCPIMessageInput{ /* identity + HTTP */ })
 //
-// One Client serves a single protocol (Config.NetworkType); the other
-// Capture method is a no-op.
+// For OCPP, prefer the session handle returned by [OCPPClient.Connection]:
+// it mints the connection ID and carries the identity, so per-frame calls
+// carry neither.
 package evpanda

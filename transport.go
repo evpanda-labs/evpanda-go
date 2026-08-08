@@ -48,7 +48,7 @@ type apiClient struct {
 
 // post issues one POST /v1/{protocol}, drains the response, and returns
 // the status code.
-func (c *apiClient) post(ctx context.Context, protocol Protocol, body []byte, encoding contentEncoding) (int, error) {
+func (c *apiClient) post(ctx context.Context, protocol protocol, body []byte, encoding contentEncoding) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
@@ -164,7 +164,7 @@ func serialize(batch []bufferedMessage) ([]byte, error) {
 	records := make([]any, 0, len(batch))
 	for _, e := range batch {
 		switch m := e.message.(type) {
-		case OCPIMessage:
+		case ocpiMessage:
 			records = append(records, ocpiIngest{
 				CapturedAt:         e.capturedAt,
 				PlatformID:         m.Identity.PlatformID,
@@ -180,7 +180,12 @@ func serialize(batch []bufferedMessage) ([]byte, error) {
 				ResponseHeaders:    headersJSON(m.HTTP.ResponseHeaders),
 				ResponseBody:       bodyB64(m.HTTP.ResponseBody),
 			})
-		case OCPPMessage:
+		case ocppMessage:
+			var direction *string
+			if m.Direction != nil {
+				s := string(*m.Direction)
+				direction = &s
+			}
 			records = append(records, ocppIngest{
 				ChargerID:    m.Identity.ChargerID,
 				ConnectionID: m.ConnectionID,
@@ -188,7 +193,7 @@ func serialize(batch []bufferedMessage) ([]byte, error) {
 				TenantName:   optStr(m.Identity.TenantName),
 				CapturedAt:   e.capturedAt,
 				EventType:    int(m.EventType),
-				Direction:    optStr(string(m.Direction)),
+				Direction:    direction,
 				RawFrame:     bodyB64(m.Payload),
 			})
 		}
@@ -246,7 +251,7 @@ func (t *transport) compress(raw []byte) ([]byte, contentEncoding) {
 // send serializes, compresses, and POSTs the batch with bounded retry:
 // 200 or 400/401/413 is terminal; 5xx and network errors back off and
 // retry. A batch that can't be delivered is dropped. Never panics.
-func (t *transport) send(ctx context.Context, protocol Protocol, batch []bufferedMessage) {
+func (t *transport) send(ctx context.Context, protocol protocol, batch []bufferedMessage) {
 	if len(batch) == 0 {
 		return
 	}
@@ -290,7 +295,7 @@ func (t *transport) send(ctx context.Context, protocol Protocol, batch []buffere
 }
 
 // logDrop records a dropped batch when the debug logger is configured.
-func (t *transport) logDrop(protocol Protocol, n int, reason string) {
+func (t *transport) logDrop(protocol protocol, n int, reason string) {
 	if t.logger == nil {
 		return
 	}

@@ -17,7 +17,7 @@ var ErrDrainIncomplete = errors.New("evpanda: close drain deadline exceeded with
 const batchCap = 1000
 
 // pollInterval is how often the worker checks the size-based flush trigger.
-const pollInterval = 500 * time.Millisecond
+const pollInterval = 200 * time.Millisecond
 
 type worker struct {
 	buffer    *ringBuffer

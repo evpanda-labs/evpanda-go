@@ -34,3 +34,4 @@ go.work.sum
 
 # Local-only design log (kept out of the repo for now)
 PORTING_NOTES.md
+.DS_Store
