@@ -1,4 +1,4 @@
-module github.com/ev-panda/evpanda-go
+module github.com/evpanda-labs/evpanda-go
 
 // One runtime dependency: github.com/klauspost/compress (pure Go, no
 // transitive deps) for zstd — the default compression. Everything else is

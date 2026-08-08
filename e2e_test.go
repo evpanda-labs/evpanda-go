@@ -21,7 +21,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	evpanda "github.com/ev-panda/evpanda-go"
+	evpanda "github.com/evpanda-labs/evpanda-go"
 )
 
 type received struct {
