@@ -1,24 +1,25 @@
 package evpanda
 
-// Protocol is the wire protocol a Client serves, set via
-// Config.NetworkType.
-type Protocol string
+// OCPIDirection is an OCPI message's direction relative to the host.
+// The values are the exact wire strings the ingestion API validates.
+type OCPIDirection string
 
 const (
-	// ProtocolOCPI is OCPI roaming HTTP traffic.
-	ProtocolOCPI Protocol = "ocpi"
-	// ProtocolOCPP is OCPP charger WebSocket traffic.
-	ProtocolOCPP Protocol = "ocpp"
+	// OCPIInbound is traffic received by the host (partner → host).
+	OCPIInbound OCPIDirection = "IN"
+	// OCPIOutbound is traffic sent by the host (host → partner).
+	OCPIOutbound OCPIDirection = "OUT"
 )
 
-// Direction is a message's direction relative to the host.
-type Direction string
+// OCPPDirection is an OCPP frame's direction relative to the charge point.
+// The values are the exact wire strings the ingestion API validates.
+type OCPPDirection string
 
 const (
-	// Inbound is traffic received by the host.
-	Inbound Direction = "inbound"
-	// Outbound is traffic sent by the host.
-	Outbound Direction = "outbound"
+	// ToCP is a frame sent to the charge point (CSMS → CP).
+	ToCP OCPPDirection = "TO_CP"
+	// FromCP is a frame received from the charge point (CP → CSMS).
+	FromCP OCPPDirection = "FROM_CP"
 )
 
 // OCPPEventType is an OCPP WebSocket lifecycle event.
@@ -33,8 +34,8 @@ const (
 	OCPPEventTypeMessage OCPPEventType = 2
 )
 
-// CapturedHTTP is a captured HTTP exchange. The caller is responsible for
-// truncating bodies to Config.MaxCaptureBytes.
+// CapturedHTTP is a captured HTTP exchange. Bodies larger than
+// MaxCaptureBytes cause the whole message to be dropped at capture.
 type CapturedHTTP struct {
 	Method          string
 	URL             string
@@ -45,31 +46,55 @@ type CapturedHTTP struct {
 	ResponseBody    []byte
 }
 
-// OCPIMessage is a captured OCPI HTTP message. Pass it to Client.CaptureOCPI.
-type OCPIMessage struct {
-	Direction Direction
+// OCPIMessageInput is the input to [OCPIClient.CaptureInbound] and
+// [OCPIClient.CaptureOutbound]; the client stamps the direction.
+type OCPIMessageInput struct {
+	// Identity attributes the message. Invalid ⇒ message dropped.
+	Identity RoamingIdentity
+	// HTTP is the captured exchange.
+	HTTP CapturedHTTP
+}
+
+// OCPPMessageInput is the input shape for the three flat OCPP capture
+// primitives. Data and Direction are only used by
+// [OCPPClient.CaptureMessage], which requires both and drops the message
+// if either is missing; connect/disconnect carry no frame.
+type OCPPMessageInput struct {
+	// Identity is the charge point this event belongs to. Invalid ⇒
+	// message dropped.
+	Identity ChargerIdentity
+	// ConnectionID is stable for the lifetime of this connection. The
+	// session handle returned by [OCPPClient.Connection] mints and
+	// carries it for you.
+	ConnectionID string
+	// Data is the raw frame. Required by CaptureMessage.
+	Data []byte
+	// Direction is the frame direction. Required by CaptureMessage.
+	Direction OCPPDirection
+}
+
+// ocpiMessage is the internal buffered form of an OCPI capture.
+type ocpiMessage struct {
+	Direction OCPIDirection
 	Identity  RoamingIdentity
 	HTTP      CapturedHTTP
 }
 
-// OCPPMessage is a captured OCPP WebSocket event. Pass it to
-// Client.CaptureOCPP.
-type OCPPMessage struct {
-	EventType OCPPEventType
-	Identity  ChargerIdentity
-	// ConnectionID is a caller-supplied identifier, stable for the life of
-	// a connection.
+// ocppMessage is the internal buffered form of an OCPP capture.
+type ocppMessage struct {
+	EventType    OCPPEventType
+	Identity     ChargerIdentity
 	ConnectionID string
-	// Direction is optional for OCPP.
-	Direction Direction
+	// direction is nil for connect/disconnect events.
+	Direction *OCPPDirection
 	Payload   []byte
 }
 
-// anyMessage is an OCPIMessage or OCPPMessage; it lets the buffer hold
+// anyMessage is an ocpiMessage or ocppMessage; it lets the buffer hold
 // either without a protocol tag.
 type anyMessage interface {
 	isMessage()
 }
 
-func (OCPIMessage) isMessage() {}
-func (OCPPMessage) isMessage() {}
+func (ocpiMessage) isMessage() {}
+func (ocppMessage) isMessage() {}
