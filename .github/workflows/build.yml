@@ -45,17 +45,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Pinned, and deliberately not `stable`. golangci-lint embeds the
-      # go/types from the Go release it was built with, and panics outright
-      # on source newer than that — so pairing a pinned linter with a
-      # floating toolchain breaks this job the day Go ships a new version,
-      # with a type-checker stack trace rather than a useful message.
+      # The go.mod floor, read from the file so there is no second copy of
+      # the number to drift — and deliberately not `stable`. golangci-lint
+      # embeds the go/types from the Go release it was built with and
+      # panics outright on source newer than that, so a floating toolchain
+      # breaks this job the day Go ships a new version, with a type-checker
+      # stack trace rather than a useful message.
       #
-      # Lint does not need the newest toolchain; the build matrix above
-      # already covers it. Bump this together with the linter version below.
+      # The floor is also the safest choice: the linter's type-checker only
+      # ever has to be new enough, and it is the version consumers are
+      # promised. Lint does not need a newer toolchain — the build matrix
+      # above already covers those.
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
 
       # action @v9 ships golangci-lint v2; the version is pinned so a lint
       # run is reproducible and a new release cannot fail an unrelated PR.
