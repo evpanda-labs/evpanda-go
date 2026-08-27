@@ -1,0 +1,2161 @@
+<title>evpanda-go Architecture</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:ital,wght@0,400;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+
+<style>
+  :root {
+    --ground:      #F4F5F6;
+    --surface:     #FFFFFF;
+    --surface-2:   #E9ECEE;
+    --ink:         #13171B;
+    --ink-2:       #4B545C;
+    --ink-3:       #79828A;
+    --rule:        #D7DBDF;
+    --rule-strong: #B6BEC4;
+    --copper:      #A9521C;
+    --copper-soft: #F2E4DA;
+    --signal:      #235C6E;
+    --signal-soft: #DBE7EB;
+    --code-bg:     #ECEFF1;
+    --shadow:      0 1px 2px rgba(19,23,27,.06), 0 8px 24px -12px rgba(19,23,27,.14);
+
+    --sans: "Chivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --serif: "Spectral", ui-serif, Georgia, "Times New Roman", serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0F1315;
+      --surface:     #161B1E;
+      --surface-2:   #1C2226;
+      --ink:         #E4E9EC;
+      --ink-2:       #A5AFB6;
+      --ink-3:       #7D878E;
+      --rule:        #262D32;
+      --rule-strong: #394249;
+      --copper:      #E08A4F;
+      --copper-soft: #33220F;
+      --signal:      #7BB8CA;
+      --signal-soft: #14262C;
+      --code-bg:     #11161A;
+      --shadow:      0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #0F1315;
+    --surface:     #161B1E;
+    --surface-2:   #1C2226;
+    --ink:         #E4E9EC;
+    --ink-2:       #A5AFB6;
+    --ink-3:       #7D878E;
+    --rule:        #262D32;
+    --rule-strong: #394249;
+    --copper:      #E08A4F;
+    --copper-soft: #33220F;
+    --signal:      #7BB8CA;
+    --signal-soft: #14262C;
+    --code-bg:     #11161A;
+    --shadow:      0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.65;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: var(--copper-soft); color: var(--ink); }
+
+  a { color: var(--copper); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--copper);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* ── shell ─────────────────────────────────────────────────────── */
+
+  .shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 24px 120px;
+  }
+
+  @media (min-width: 1080px) {
+    .shell {
+      grid-template-columns: 216px minmax(0, 1fr);
+      gap: 56px;
+      padding-left: 40px;
+      padding-right: 40px;
+    }
+  }
+
+  .col { min-width: 0; max-width: 880px; }
+
+  /* ── rail ──────────────────────────────────────────────────────── */
+
+  .rail { display: none; }
+
+  @media (min-width: 1080px) {
+    .rail {
+      display: block;
+      position: sticky;
+      top: 0;
+      align-self: start;
+      max-height: 100vh;
+      overflow-y: auto;
+      padding: 48px 0 48px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.5;
+    }
+  }
+
+  .rail-part {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 22px 0 8px;
+  }
+  .rail-part:first-child { margin-top: 0; }
+
+  .rail a {
+    display: grid;
+    grid-template-columns: 20px 1fr;
+    gap: 6px;
+    padding: 3px 0 3px 10px;
+    color: var(--ink-2);
+    text-decoration: none;
+    border-left: 2px solid var(--rule);
+  }
+  .rail a:hover { color: var(--ink); }
+  .rail a.on {
+    color: var(--copper);
+    border-left-color: var(--copper);
+    font-weight: 500;
+  }
+  .rail .n { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .rail a.on .n { color: var(--copper); }
+
+  /* ── masthead ──────────────────────────────────────────────────── */
+
+  header.mast {
+    padding: 72px 0 40px;
+    border-bottom: 1px solid var(--rule-strong);
+    margin-bottom: 48px;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--copper);
+    margin: 0 0 18px;
+  }
+
+  h1 {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: clamp(38px, 6vw, 60px);
+    line-height: 1.02;
+    letter-spacing: -.028em;
+    margin: 0 0 20px;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: 20px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0 0 32px;
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .facts div { background: var(--ground); padding: 12px 14px; }
+  .facts dt {
+    font-family: var(--sans);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 4px;
+  }
+  .facts dd {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink);
+    margin: 0;
+    word-break: break-word;
+  }
+
+  /* ── parts + sections ──────────────────────────────────────────── */
+
+  .part {
+    margin: 88px 0 40px;
+    padding-top: 20px;
+    border-top: 3px solid var(--ink);
+  }
+  .part:first-of-type { margin-top: 64px; }
+  .part .label {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .part h2 {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: clamp(26px, 3.6vw, 34px);
+    letter-spacing: -.02em;
+    line-height: 1.1;
+    margin: 0;
+  }
+
+  section { margin-top: 52px; scroll-margin-top: 24px; }
+
+  h3 {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 23px;
+    letter-spacing: -.012em;
+    line-height: 1.22;
+    margin: 0 0 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 8px;
+    text-wrap: balance;
+  }
+  h3 .n {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--copper);
+    padding-top: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  h4 {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: .01em;
+    margin: 34px 0 10px;
+  }
+
+  p { margin: 0 0 18px; max-width: 68ch; }
+  ul, ol { margin: 0 0 18px; padding-left: 22px; max-width: 68ch; }
+  li { margin-bottom: 7px; }
+  li::marker { color: var(--ink-3); }
+  strong { font-weight: 600; color: var(--ink); }
+
+  code {
+    font-family: var(--mono);
+    font-size: .855em;
+    background: var(--code-bg);
+    padding: .12em .34em;
+    border-radius: 2px;
+    word-break: break-word;
+  }
+
+  /* ── code blocks ───────────────────────────────────────────────── */
+
+  .code {
+    background: var(--code-bg);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    margin: 0 0 22px;
+    overflow: hidden;
+  }
+  .code .cap {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface-2);
+  }
+  .code pre {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.62;
+    tab-size: 4;
+  }
+  .code pre code { background: none; padding: 0; font-size: inherit; }
+  .c { color: var(--ink-3); font-style: italic; }
+  .k { color: var(--signal); }
+
+  /* ── figures ───────────────────────────────────────────────────── */
+
+  figure {
+    margin: 0 0 26px;
+    border: 1px solid var(--rule-strong);
+    border-radius: 3px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  figure pre {
+    margin: 0;
+    padding: 20px 18px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink);
+    white-space: pre;
+  }
+  figcaption {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    padding: 11px 16px;
+    border-top: 1px solid var(--rule);
+    background: var(--surface-2);
+  }
+  figcaption b {
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  /* ── tables ────────────────────────────────────────────────────── */
+
+  .tw { overflow-x: auto; margin: 0 0 24px; border: 1px solid var(--rule); border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td {
+    text-align: left;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { font-size: 12px; white-space: nowrap; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12.5px; white-space: nowrap; }
+
+  /* ── invariant callouts ────────────────────────────────────────── */
+
+  .rule-box {
+    border-left: 3px solid var(--copper);
+    background: var(--copper-soft);
+    padding: 14px 18px;
+    margin: 0 0 24px;
+    border-radius: 0 3px 3px 0;
+  }
+  .rule-box .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--copper);
+    display: block;
+    margin-bottom: 5px;
+  }
+  .rule-box p { margin: 0; font-size: 15.5px; max-width: 64ch; }
+  .rule-box p + p { margin-top: 10px; }
+
+  .note {
+    border-left: 3px solid var(--rule-strong);
+    padding: 2px 0 2px 18px;
+    margin: 0 0 24px;
+    color: var(--ink-2);
+    font-size: 15.5px;
+  }
+  .note p { margin: 0; }
+  .note p + p { margin-top: 10px; }
+
+  hr.soft { border: none; border-top: 1px solid var(--rule); margin: 40px 0; }
+
+  footer {
+    margin-top: 88px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule-strong);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-3);
+    line-height: 1.7;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { scroll-behavior: auto !important; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+</style>
+
+<div class="shell">
+
+  <nav class="rail" aria-label="Contents">
+    <div class="rail-part">I · Architecture</div>
+    <a href="#s1"><span class="n">1</span><span>Constraints</span></a>
+    <a href="#s2"><span class="n">2</span><span>Shape of the package</span></a>
+    <a href="#s3"><span class="n">3</span><span>Concurrency model</span></a>
+    <div class="rail-part">II · Data flow</div>
+    <a href="#s4"><span class="n">4</span><span>The pipeline</span></a>
+    <a href="#s5"><span class="n">5</span><span>The chokepoint</span></a>
+    <a href="#s6"><span class="n">6</span><span>The ring buffer</span></a>
+    <a href="#s7"><span class="n">7</span><span>The worker</span></a>
+    <a href="#s8"><span class="n">8</span><span>The transport</span></a>
+    <a href="#s9"><span class="n">9</span><span>Wire contract</span></a>
+    <div class="rail-part">III · Using it</div>
+    <a href="#s10"><span class="n">10</span><span>Configuration</span></a>
+    <a href="#s11"><span class="n">11</span><span>Lifecycle</span></a>
+    <a href="#s12"><span class="n">12</span><span>Is it working?</span></a>
+    <a href="#s13"><span class="n">13</span><span>OCPP</span></a>
+    <a href="#s14"><span class="n">14</span><span>OCPI, directly</span></a>
+    <a href="#s15"><span class="n">15</span><span>OCPI adapters</span></a>
+    <a href="#s16"><span class="n">16</span><span>Identity resolution</span></a>
+    <div class="rail-part">Appendix</div>
+    <a href="#s17"><span class="n">A</span><span>Cross-SDK parity</span></a>
+    <a href="#s18"><span class="n">B</span><span>Known gaps</span></a>
+  </nav>
+
+  <div class="col">
+
+    <header class="mast">
+      <p class="eyebrow">Design document · package evpanda</p>
+      <h1>evpanda-go</h1>
+      <p class="standfirst">
+        A passive OCPI / OCPP capture SDK that lives inside someone else's
+        production process. It records protocol traffic, buffers it in memory,
+        and ships it in batches — while guaranteeing it never blocks, never
+        panics, and never grows without bound.
+      </p>
+      <dl class="facts">
+        <div><dt>Module</dt><dd>github.com/evpanda-labs/evpanda-go</dd></div>
+        <div><dt>Package</dt><dd>evpanda</dd></div>
+        <div><dt>Go</dt><dd>1.24+</dd></div>
+        <div><dt>Runtime deps</dt><dd>klauspost/compress</dd></div>
+        <div><dt>Goroutines</dt><dd>1 per client</dd></div>
+        <div><dt>Reference SDK</dt><dd>evpanda-node</dd></div>
+      </dl>
+    </header>
+
+    <p>
+      This document explains how the SDK is put together, what happens to a
+      captured message between your handler and the ingestion API, and how to
+      wire it into a service. Read Part&nbsp;I and Part&nbsp;II to understand
+      the machine; read Part&nbsp;III if you just need to use it.
+    </p>
+
+    <p>
+      The design tracks <strong>evpanda-node</strong>, which is the reference
+      implementation — same layering, same names, same wire records. Where Go
+      diverges it is deliberate and called out, and §A lists every divergence
+      in one place. The one substantial rewrite is the delivery loop: Node and
+      Python poll a buffer because neither runtime can wake a sleeping worker,
+      and Go can.
+    </p>
+
+    <!-- ════════════════════ PART I ════════════════════ -->
+
+    <div class="part">
+      <span class="label">Part I</span>
+      <h2>Architecture</h2>
+    </div>
+
+    <section id="s1">
+      <h3><span class="n">1</span><span>Constraints that shaped everything</span></h3>
+
+      <p>
+        This SDK is unusual in one respect: it runs inside a customer's
+        charging platform, on their goroutines, in their memory, on the hot
+        path of their revenue-carrying traffic. Nothing it does is worth a
+        degraded charging session. Four rules follow from that, and every
+        design decision below is downstream of them.
+      </p>
+
+      <div class="rule-box">
+        <span class="tag">Invariant 1</span>
+        <p><b>Capture never blocks.</b> A capture call validates, copies, and
+        enqueues — no I/O, no channel send that can wait, no lock held across
+        a syscall. If the upstream is down, capture cost does not change.</p>
+      </div>
+
+      <div class="rule-box">
+        <span class="tag">Invariant 2</span>
+        <p><b>Nothing panics into the host.</b> Every public entry point is
+        wrapped in a recover. Capture methods return nothing, so a fault has
+        nowhere to surface; <code>Flush</code>, <code>Close</code> and
+        <code>Shutdown</code> convert a recovered panic into an error.</p>
+      </div>
+
+      <div class="rule-box">
+        <span class="tag">Invariant 3</span>
+        <p><b>Memory is bounded, and the bound is a number you provision
+        against.</b> <code>MaxBufferBytes</code> is the ceiling on everything
+        held awaiting delivery — 32&nbsp;MiB by default, allocated on demand.
+        Under stress the SDK evicts rather than accumulating.</p>
+      </div>
+
+      <div class="rule-box">
+        <span class="tag">Invariant 4</span>
+        <p><b>A bad config degrades, it does not crash.</b>
+        <code>StartOCPI</code> / <code>StartOCPP</code> always return a
+        usable, non-nil client. A bad endpoint yields an <em>inert</em> client
+        plus an error; you may log it and carry on booting.</p>
+      </div>
+
+      <p>
+        Two consequences are worth stating plainly, because they are the
+        trade the whole design makes. <strong>Delivery is best-effort.</strong>
+        A batch that survives five retries and still fails is dropped, and a
+        buffer that fills evicts its oldest entries. Losing telemetry is
+        always preferable to slowing down a charge point. And
+        <strong>capture is fire-and-forget</strong>: no capture method returns
+        an error, because there is nothing a caller could usefully do with one.
+      </p>
+    </section>
+
+    <section id="s2">
+      <h3><span class="n">2</span><span>Shape of the package</span></h3>
+
+      <p>
+        One flat package, <code>evpanda</code>, mirroring how the Node SDK
+        splits <code>src/</code> and how Python splits
+        <code>evpanda/</code>. Flat keeps the import path a caller already has
+        (<code>evpanda.StartOCPI</code>, not
+        <code>ocpi.New(evpanda.Config{})</code>) and avoids an internal
+        package that exists only to dodge an import cycle.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="File map: the evpanda package holding the capture pipeline, and the ocpi subpackage holding the two adapters">evpanda-go/                     package evpanda — the capture pipeline
+│
+├── doc.go                   package documentation
+├── types.go                 wire-facing types · identities · `message`
+├── config.go                BaseConfig → resolvedConfig · defaults · warnings
+├── clients.go               lifecycle core + OCPIClient + OCPPClient
+├── stats.go                 counters · drop taxonomy · health reporting
+├── buffer.go                byte-bounded buffer · captured_at stamp
+├── worker.go                the goroutine · the chokepoint · drain
+├── transport.go             wire records · compression · retry · POST
+└── redact.go                OCPI allowlist + token mask · OCPP seam
+
+evpanda-go/ocpi/                package ocpi — the adapters
+│
+├── adapter.go               identity on context/headers · the resolver ·
+│                            options · body tees · the Capturer seam
+├── middleware.go            inbound   (net/http middleware)
+└── roundtripper.go          outbound  (http.RoundTripper)</pre>
+        <figcaption>
+          <b>The protocol is the client.</b> There is no <code>networkType</code>
+          switch: <code>OCPIClient</code> and <code>OCPPClient</code> are
+          parallel front ends over one shared core, and a client instance
+          serves exactly one protocol for its whole life.
+        </figcaption>
+      </figure>
+
+      <p>
+        The core knows nothing about OCPI or OCPP beyond the two structs it
+        moves. <code>worker.go</code> and <code>transport.go</code> handle
+        both because a message is just something that can turn itself into an
+        ingestion record:
+      </p>
+
+      <div class="code">
+        <div class="cap">types.go</div>
+<pre><code><span class="c">// message is the sealed interface the ring buffer holds, so it can carry
+// either protocol without a tag.</span>
+type message interface {
+	record(capturedAt string) any
+}</code></pre>
+      </div>
+
+      <p>
+        Two methods, both dispatched off that interface, replace the type
+        switches a previous revision used in <code>serialize</code> and the
+        buffer. Adding a third protocol means adding a struct and
+        implementing them; nothing in the core changes.
+      </p>
+
+      <h4>2.1 &nbsp;Why the adapters are their own package</h4>
+
+      <p>
+        The capture pipeline and the adapters change at different rates.
+        The pipeline is done — a buffer, a goroutine, a transport, and a
+        wire contract that only moves when the ingestion API does.
+        Adapters accumulate framework surface indefinitely: today
+        <code>net/http</code> and <code>http.RoundTripper</code>, tomorrow
+        whatever a customer's CSMS is written against. Keeping them apart
+        means the growing half cannot crowd the finished half's namespace,
+        and <code>go doc evpanda</code> stays about capture.
+      </p>
+
+      <p>
+        Go's package boundary is real, though, and the split has a price.
+        The adapters need two things the core previously kept unexported:
+        the resolved per-body cap, so a streaming body is bounded as it is
+        read rather than after it is buffered, and a live/inert check, so
+        an inert or closed client costs no per-request work. Both are now
+        one exported method.
+      </p>
+
+      <div class="code">
+        <div class="cap">the seam — clients.go, consumed by package ocpi</div>
+<pre><code><span class="c">// CaptureLimits reports the resolved per-body capture cap and whether
+// the client is currently capturing.</span>
+func (c *client) CaptureLimits() (maxCaptureBytes int, active bool)</code></pre>
+      </div>
+
+      <p>
+        The <code>ocpi</code> package depends on a three-method
+        <code>Capturer</code> interface rather than <code>*OCPIClient</code>
+        — the two capture methods plus <code>CaptureLimits</code> — with a
+        compile-time assertion that the real client satisfies it. That also
+        makes the adapters testable against a fake, with no pipeline
+        running.
+      </p>
+
+      <div class="rule-box">
+        <span class="tag">Not a leak — the documented escape hatch</span>
+        <p>Exporting <code>CaptureLimits</code> and
+        <code>RoamingIdentity.Valid</code> is not internal plumbing
+        escaping: they are exactly what someone writing an adapter for a
+        framework the SDK does not ship needs. Since "call
+        <code>CaptureInboundMessage</code> yourself" is the documented
+        answer for fasthttp, gRPC gateways and the rest, the seam has to be
+        public anyway.</p>
+      </div>
+
+      <p>
+        The same reasoning sets where the next adapter goes.
+        <strong>An adapter that needs a third-party import gets its own
+        module</strong> — <code>evpanda-go/adapters/gin</code> with its own
+        <code>go.mod</code> — because a same-module subpackage would still
+        put gin in this module's dependency graph, and nobody should take a
+        dependency on gin to capture OCPP traffic. Stdlib-only adapters
+        stay in <code>ocpi</code>. It is the split OpenTelemetry uses for
+        the same reason: contrib instrumentation ships as separate modules
+        while the SDK core stays whole.
+      </p>
+
+    </section>
+
+    <section id="s3">
+      <h3><span class="n">3</span><span>Concurrency model</span></h3>
+
+      <p>
+        <strong>One client owns exactly one goroutine.</strong> Not a pool,
+        not one per connection — one. It is the only thing in the SDK that
+        performs I/O, and it is the only thing that touches the transport.
+      </p>
+
+      <p>
+        That single-goroutine rule is what makes the rest simple. Flushes are
+        serialized because they all happen in the same place, not because a
+        mutex says so. There is no flush lock, no in-flight promise to join,
+        no re-entrancy guard — the loop is the guard. Producers and the worker
+        meet at exactly one point, the ring buffer, which holds a mutex for
+        the microseconds it takes to write a slot.
+      </p>
+
+      <div class="note">
+        <p>
+          Node and Python both poll: a 200&nbsp;ms timer wakes, checks a
+          counter, and mostly goes back to sleep. That is a workaround for
+          runtimes where a producer cannot signal a sleeping consumer. Go can,
+          so the Go worker sleeps in a <code>select</code> until something
+          actually happens — see §7. An idle SDK costs one parked goroutine
+          and zero wakeups.
+        </p>
+      </div>
+
+      <h4>What is safe to call from where</h4>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Operation</th><th>Concurrency</th><th>Blocks?</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>CaptureInboundMessage</code> / <code>CaptureOutboundMessage</code></td><td>Any goroutine, any number</td><td>No</td></tr>
+            <tr><td><code>CaptureConnect</code> / <code>Message</code> / <code>Disconnect</code></td><td>Any goroutine, any number</td><td>No</td></tr>
+            <tr><td><code>OCPPSession</code> methods</td><td>One session per socket; safe to share</td><td>No</td></tr>
+            <tr><td><code>Flush</code></td><td>Any goroutine; concurrent callers queue</td><td><strong>Yes</strong> — waits for the POST</td></tr>
+            <tr><td><code>Close</code> / <code>Shutdown</code></td><td>Idempotent; safe to call twice</td><td><strong>Yes</strong> — until drained or deadline</td></tr>
+            <tr><td>Adapters (<code>Middleware</code>, <code>RoundTripper</code>)</td><td>Built once, used concurrently</td><td>No</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        <code>Flush</code> is the one method that blocks, and it blocks for as
+        long as the transport's bounded retry takes — up to a couple of
+        minutes against a dead upstream. It is a shutdown and diagnostic tool,
+        not something to call on a request path. Capture is already
+        asynchronous; you do not need to flush to make it happen.
+      </p>
+    </section>
+
+    <!-- ════════════════════ PART II ════════════════════ -->
+
+    <div class="part">
+      <span class="label">Part II</span>
+      <h2>Data flow</h2>
+    </div>
+
+    <section id="s4">
+      <h3><span class="n">4</span><span>The pipeline, end to end</span></h3>
+
+      <p>
+        Every captured message — OCPI or OCPP, adapter or direct call — takes
+        exactly this path. There is no second route, no fast path, no
+        bypass.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="Vertical pipeline: host code calls the capture surface, which runs the chokepoint, enqueues into the ring buffer, and hands off across a goroutine boundary to the worker loop, the transport, and finally the ingestion API">  your code
+  ┌────────────────────────────────────────────┐
+  │  HTTP handler  ·  WebSocket read loop      │
+  └──────────────────────┬─────────────────────┘
+                         │  CaptureInboundMessage(…)
+                         │  sess.Message(frame, FromCP)
+                         ▼
+  ┌────────────────────────────────────────────┐   ocpi.go
+  │  capture surface                           │   ocpp.go
+  │  never blocks · never panics · returns void│
+  └──────────────────────┬─────────────────────┘
+                         ▼
+  ┌────────────────────────────────────────────┐   worker.go
+  │  chokepoint                                │   prepareOCPI
+  │  validate → cap → redact → stamp time      │   prepareOCPP
+  └──────────────────────┬─────────────────────┘
+                         │
+              drop ◀─────┤  invalid identity · oversize body
+                         ▼  keep
+  ┌────────────────────────────────────────────┐   buffer.go
+  │  buffer        MaxBufferBytes ceiling      │
+  │                over it ⇒ oldest evicted    │
+  └──────────────────────┬─────────────────────┘
+  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄   ▲ caller's goroutine
+                         ▼                         ▼ worker goroutine
+  ┌────────────────────────────────────────────┐   worker.go
+  │  worker loop   one goroutine · one select  │
+  └──────────────────────┬─────────────────────┘
+                         │  batch ≤ 1000 records
+                         ▼
+  ┌────────────────────────────────────────────┐   transport.go
+  │  transport   JSON → zstd → POST → retry    │
+  └──────────────────────┬─────────────────────┘
+                         ▼
+       POST /v1/ocpi   ·   POST /v1/ocpp        ingestion API</pre>
+        <figcaption>
+          <b>The ring buffer is the goroutine boundary.</b> Everything above it
+          runs on your goroutine and is measured in microseconds; everything
+          below runs on the worker and is the only place the SDK does I/O.
+        </figcaption>
+      </figure>
+
+      <p>
+        Two things are worth noticing about where the boundary sits. First,
+        <em>redaction happens above it</em> — an unredacted message is never
+        written to the buffer, so a heap dump of a running process cannot
+        contain a captured <code>Authorization</code> header. Second, the
+        <em>capture timestamp is stamped above it too</em>, at chokepoint
+        time. <code>captured_at</code> is when your handler saw the traffic,
+        not when the SDK got round to shipping it, so queue delay never
+        distorts the record.
+      </p>
+    </section>
+
+    <section id="s5">
+      <h3><span class="n">5</span><span>The chokepoint</span></h3>
+
+      <p>
+        <code>prepareOCPI</code> and <code>prepareOCPP</code> in
+        <code>worker.go</code> are the single place a message is checked and
+        transformed before it enters the queue. They are pure functions: given
+        a message they return an envelope to enqueue, or <code>false</code> to
+        drop. Keeping them pure and module-local is deliberate — it means
+        there is one answer to "why was my message not captured?", and it can
+        be unit-tested without a client, a server, or a goroutine.
+      </p>
+
+      <div class="code">
+        <div class="cap">worker.go — the OCPI chokepoint</div>
+<pre><code>func prepareOCPI(msg ocpiMessage, redact ocpiRedactor, maxCaptureBytes int) (bufferedMessage, dropReason) {
+	if !msg.Identity.Valid() {
+		return bufferedMessage{}, dropInvalidIdentity
+	}
+	if len(msg.Data.RequestBody) &gt; maxCaptureBytes || len(msg.Data.ResponseBody) &gt; maxCaptureBytes {
+		return bufferedMessage{}, dropOversize
+	}
+	<span class="c">// Take ownership before redacting. From here the bytes are the SDK's,
+	// so a redactor may rewrite a body in place, and the host may reuse
+	// its own buffer the moment the capture call returns.</span>
+	msg.Data.own()
+	return bufferedMessage{capturedAt: nowISO(), message: redact(msg)}, dropNone
+}</code></pre>
+      </div>
+
+      <p>Four things happen here, in order:</p>
+
+      <ol>
+        <li>
+          <strong>Validate the identity.</strong> OCPI needs
+          <code>PlatformID</code> and <code>PlatformName</code>; OCPP needs
+          <code>ChargerID</code>. Tenant is all-or-nothing — both
+          <code>TenantID</code> and <code>TenantName</code>, or neither. A
+          message the SDK cannot attribute is useless downstream, so it is
+          dropped rather than shipped as an orphan.
+        </li>
+        <li>
+          <strong>Enforce the byte cap.</strong> An oversize body drops the
+          <em>whole message</em>, never a truncated one. Half a JSON body is
+          unparseable, and worse, truncation could slice a credentials
+          payload in a way that defeats the redactor below.
+        </li>
+        <li>
+          <strong>Take ownership of the bodies.</strong> The chokepoint
+          copies every byte payload before redaction runs, so the buffered
+          capture never aliases the host's memory. Two things follow: the
+          host may reuse a pooled read buffer the instant the capture call
+          returns, and a redactor may rewrite a body in place without
+          reaching back into the caller's slice.
+        </li>
+        <li>
+          <strong>Redact</strong>, then <strong>stamp
+          <code>captured_at</code></strong> and wrap the message in its
+          envelope.
+        </li>
+      </ol>
+
+      <div class="rule-box">
+        <span class="tag">Why the copy is worth a memcpy per message</span>
+        <p>A capture is held until the next flush — up to
+        <code>FlushInterval</code>. A body assigned straight from a reused
+        buffer would be serialized <em>after</em> the host had overwritten
+        it, so the ingestion API would receive whatever happened to be in
+        that buffer 5 seconds later. Silent, intermittent, and
+        indistinguishable from an SDK bug.</p>
+        <p><code>SetRequestBody</code> and
+        <code>SetResponseBody</code> make the transfer explicit at the call
+        site; the chokepoint copies anyway, so the guarantee does not depend
+        on anyone remembering them.</p>
+      </div>
+
+      <p>
+        OCPP has one extra rule. The ingestion contract requires both
+        <code>direction</code> and <code>raw_frame</code> when
+        <code>event_type</code> is <code>2</code> (MESSAGE), so a message
+        event missing either is dropped at the chokepoint rather than being
+        sent and rejected with a 400.
+      </p>
+
+      <h4>5.1 &nbsp;Redaction</h4>
+
+      <p>
+        Redaction is a closure built once per client — <code>defaultOCPIRedactor</code>
+        captures the allowlist set so it is not rebuilt per message — and
+        applied as a pure transform. OCPI has two rules:
+      </p>
+
+      <p>
+        <strong>Header allowlist.</strong> Only listed headers survive; every
+        unlisted header is dropped, so <code>Authorization</code>,
+        <code>Cookie</code> and <code>X-API-Key</code> fall off without
+        needing to be enumerated. <code>OCPIAllowedHeaders</code> extends the
+        list and can never shrink it. The default set is deliberately small:
+      </p>
+
+      <figure>
+<pre role="img" aria-label="The default OCPI header allowlist, grouped by purpose: routing, content negotiation, tracing, and pagination">  routing        ocpi-from-country-code   ocpi-from-party-id
+                 ocpi-to-country-code     ocpi-to-party-id
+
+  negotiation    content-type   accept   user-agent
+
+  tracing        x-correlation-id   x-request-id
+
+  pagination     x-total-count   x-limit   link</pre>
+        <figcaption>
+          <b>Twelve headers, none of which can carry a secret.</b> An allowlist
+          rather than a denylist, because a denylist silently fails open when a
+          partner invents a new auth header.
+        </figcaption>
+      </figure>
+
+      <p>
+        <strong>Credentials-token mask.</strong> The OCPI
+        <code>/credentials</code> endpoint exchanges bearer tokens in the
+        request body, where a header allowlist cannot reach. On a URL ending
+        <code>/credentials</code> the <code>token</code> field is replaced with
+        <code>[redacted]</code> — at the root for requests, under
+        <code>data</code> for the response envelope. Any miss (non-credentials
+        URL, non-JSON, no token, re-encode failure) returns the original bytes
+        unchanged: redaction never silently drops data it could not safely
+        rewrite.
+      </p>
+
+      <p>
+        OCPP frames are captured verbatim, so there is no OCPP redactor at
+        all: <code>OCPPClient.redact</code> stays nil and the chokepoint
+        skips the step, rather than paying an indirect call per frame to run
+        an identity transform. The nil-able field <em>is</em> the seam —
+        masking <code>idTag</code> in <code>Authorize</code>, say, arrives as
+        a <code>defaultOCPPRedactor</code> plus one line in
+        <code>StartOCPP</code>, with nothing in the worker or the client to
+        change.
+      </p>
+
+      <div class="rule-box">
+        <span class="tag">The other half of that contract</span>
+        <p>Because nil means "nothing to redact", a live <b>OCPI</b> client
+        must never have one. <code>StartOCPI</code> is the only place the
+        field is set, and the only nil-redactor client is the inert one a
+        failed config returns — which never captures. A test pins both
+        halves, so the invariant cannot rot silently into shipped
+        <code>Authorization</code> headers.</p>
+      </div>
+    </section>
+
+    <section id="s6">
+      <h3><span class="n">6</span><span>The buffer</span></h3>
+
+      <p>
+        A byte-bounded, drop-oldest queue. It does no I/O and knows nothing
+        about protocols; it is a bounded handoff between many producers and
+        one consumer.
+      </p>
+
+      <div class="rule-box">
+        <span class="tag">Why bytes, not a message count</span>
+        <p>Captured messages vary by two orders of magnitude. A message count
+        is a proxy for the thing an operator actually has to provision, and a
+        poor one — the same 10&nbsp;000 slots is 3&nbsp;MiB of heartbeats or
+        625&nbsp;MiB of capped bodies. You cannot size a container against a
+        number that is 100× off in the common case.</p>
+      </div>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Typical message</th><th>Accounted</th><th>Fit in 32 MiB</th><th>Old: 10 000 slots</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>OCPP heartbeat</td><td class="num">355 B</td><td class="num">94 520</td><td class="num">10 000</td></tr>
+            <tr><td>OCPP meter values</td><td class="num">582 B</td><td class="num">57 654</td><td class="num">10 000</td></tr>
+            <tr><td>OCPI CDR push (2.4 KiB body)</td><td class="num">3 124 B</td><td class="num">10 741</td><td class="num">10 000</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Byte-bounding is strictly better on both axes: the worst case drops
+        from 625&nbsp;MiB to 32&nbsp;MiB, <em>and</em> the small messages that
+        dominate real traffic get up to 9× more headroom. The backing slice
+        also grows on demand, so a 50-charger deployment holds a few hundred
+        kilobytes rather than pre-allocating for its ceiling.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="A byte-bounded buffer at its ceiling: a large arriving message evicts as many of the oldest small messages as it needs to fit">  MaxBufferBytes ceiling reached · a 3-unit capture arrives
+
+           oldest                                    newest
+             ▼                                         ▼
+          ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+  before  │ #4  │ #5  │ #6  │ #7  │ #8  │ #9  │ #10 │ #11 │
+          └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+             └─────────────┘
+             evict until it fits — by bytes, not by slot
+
+          ┌─────┬─────┬─────┬─────┬─────┬─────────────────┐
+  after   │ #7  │ #8  │ #9  │ #10 │ #11 │       #12       │
+          └─────┴─────┴─────┴─────┴─────┴─────────────────┘
+
+  enqueue() returned immediately in both cases.</pre>
+        <figcaption>
+          <b>Backpressure is eviction, never waiting.</b> One large capture
+          displaces as many small ones as it needs — which a slot-counted ring
+          could not express, and is why the ceiling holds under mixed traffic.
+        </figcaption>
+      </figure>
+
+      <p>
+        Drop-<em>oldest</em> rather than drop-newest is a deliberate choice:
+        during an incident the most recent frames are the ones an operator
+        actually wants. The producer never learns that eviction happened —
+        there is nothing useful it could do with that information, and
+        returning an error would push a decision onto a caller who called a
+        fire-and-forget method. The <em>operator</em> can act on it, though, which
+        is what the counters in §12 are for — a different consumer at a
+        different timescale.
+      </p>
+
+      <p>
+        Two Go-specific details make the ceiling real rather than
+        aspirational. Eviction and <code>drain</code> both zero the slots they
+        release — otherwise the backing array would pin every message the
+        buffer ever held, since each envelope keeps a body byte slice alive.
+        And the live region is compacted once its evicted prefix reaches half
+        the slice, so eviction-heavy traffic cannot grow the array without
+        bound.
+      </p>
+
+      <p>
+        Accounting charges each message its variable-length parts plus a
+        deliberately generous fixed overhead (<code>envelopeOverhead</code>,
+        256&nbsp;B) for struct fields, string and slice headers, and the slot
+        itself. Over-counting is the safe direction: it keeps the configured
+        budget a true ceiling. It also means the byte bound implies a message
+        bound — 32&nbsp;MiB can never hold more than ~131&nbsp;000 messages
+        however small they are — so there is no second knob to set.
+      </p>
+
+      <p>
+        <code>enqueue</code> returns the resulting message count. That return
+        value is what lets the worker sleep instead of poll, which is §7.
+      </p>
+    </section>
+
+    <section id="s7">
+      <h3><span class="n">7</span><span>The worker</span></h3>
+
+      <p>
+        The whole delivery loop is one <code>select</code> over four channels.
+        This is the part of the SDK that differs most from the Node reference,
+        and it is the part worth reading the source for.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="Four channels feed one select statement in a single goroutine: the flush timer, a producer wake signal, an explicit flush request, and the quit signal">   what wakes it                     the loop              what happens
+
+   timer.C    FlushInterval   ──┐
+                                │    ┌─────────────────────┐
+   wake       ring hit 1000   ──┤    │                     │──▶  flush()
+                                ├───▶│   select { … }      │     drain the ring
+   flushReq   Flush() called  ──┤    │                     │     POST batches
+                                │    │  ONE goroutine      │
+   quit       Close() called  ──┘    │  never re-entrant   │──▶  loop returns
+                                     └─────────────────────┘
+
+   nothing polls · idle cost is one parked goroutine</pre>
+        <figcaption>
+          <b>Four wake reasons, one flush path.</b> Because every flush runs in
+          the same goroutine, serialization is structural — there is no mutex to
+          forget to hold and no way for two flushes to overlap.
+        </figcaption>
+      </figure>
+
+      <div class="code">
+        <div class="cap">worker.go — the loop</div>
+<pre><code>for {
+	select {
+	case &lt;-w.quit:
+		return
+
+	case &lt;-timer.C:
+		w.flush(w.ctx)
+		timer.Reset(w.cfg.flushInterval)
+
+	case &lt;-w.wake:
+		w.flush(w.ctx)
+		<span class="c">// Restart the interval: a size-triggered flush already
+		// emptied the buffer, so the pending tick would be a no-op.</span>
+		timer.Stop()
+		timer.Reset(w.cfg.flushInterval)
+
+	case ack := &lt;-w.flushReq:
+		w.flush(w.ctx)
+		timer.Stop()
+		timer.Reset(w.cfg.flushInterval)
+		close(ack)
+	}
+}</code></pre>
+      </div>
+
+      <h4>7.1 &nbsp;The size trigger</h4>
+
+      <p>
+        <code>wake</code> is a buffered channel with exactly one slot, and
+        producers send to it non-blocking:
+      </p>
+
+      <div class="code">
+        <div class="cap">worker.go — the producer side</div>
+<pre><code>func (w *worker) enqueue(env bufferedMessage) {
+	if w.buffer.enqueue(env) &lt; batchCap {
+		return
+	}
+	select {
+	case w.wake &lt;- struct{}{}:
+	default: <span class="c">// a trigger is already pending; one flush covers both</span>
+	}
+}</code></pre>
+      </div>
+
+      <p>
+        The one-slot-plus-<code>default</code> pattern is what keeps
+        Invariant&nbsp;1 intact. A thousand producers arriving at once
+        collapse into a single pending wake; none of them waits, and the
+        worker does one flush rather than a thousand. If the worker is already
+        mid-flush, the trigger sits in the slot and is picked up on the next
+        turn of the loop.
+      </p>
+
+      <h4>7.2 &nbsp;Flush and drain</h4>
+
+      <p>
+        <code>Flush()</code> sends an ack channel on <code>flushReq</code> and
+        waits for the worker to close it. A concurrent caller queues on the
+        unbuffered send rather than starting a second flush — the same
+        single-flight guarantee Node gets from sharing a promise, but achieved
+        by the channel rather than by bookkeeping. Both the send and the wait
+        also select on <code>done</code>, so a <code>Flush</code> racing a
+        <code>Close</code> returns instead of deadlocking.
+      </p>
+
+      <p>
+        Shutdown moves the drain onto the caller's goroutine. The sequence is:
+        close <code>quit</code>; wait for <code>done</code> (which also waits
+        out a flush already in flight); then drain the remaining buffer in a
+        loop until it is empty or the deadline passes. If the deadline expires
+        while the loop is still flushing, cancelling the worker's context
+        aborts the in-flight POST — so <code>Close</code> can never leave a
+        goroutine running past its return.
+      </p>
+
+      <div class="code">
+        <div class="cap">worker.go — shutdown</div>
+<pre><code>select {
+case &lt;-w.done:
+case &lt;-ctx.Done():
+	w.cancel()   <span class="c">// aborts the in-flight POST</span>
+	&lt;-w.done     <span class="c">// the goroutine cannot outlive this call</span>
+	return ErrDrainIncomplete
+}
+
+<span class="c">// The loop is gone, so the drain runs here, on the caller's goroutine.</span>
+for w.buffer.length() &gt; 0 {
+	if ctx.Err() != nil {
+		return ErrDrainIncomplete
+	}
+	w.flush(ctx)
+}</code></pre>
+      </div>
+    </section>
+
+    <section id="s8">
+      <h3><span class="n">8</span><span>The transport</span></h3>
+
+      <p>
+        Hand-rolled over <code>net/http</code>. No generated client: two
+        endpoints do not justify pulling a code-generator's transitive
+        dependency tree into a customer's production binary.
+      </p>
+
+      <p>
+        The transport owns retry entirely. The worker calls <code>send</code>
+        once and moves on; there is no retry logic anywhere else, and no
+        caller ever sees a delivery error.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="Transport stages: serialize to JSON, compress, POST, and classify the response into success, permanent drop, or retry">  batch  ──▶  serialize          {"messages":[ … ]}   ≤ 1000 records
+              │
+              ▼
+             compress           &lt; 1 KiB  ──▶  identity, no CPU spent
+              │                 zstd (default) · gzip (opt-in)
+              ▼
+             POST /v1/{protocol}
+              │                 X-API-Key · Content-Type · Content-Encoding
+              ▼
+             classify ──┬── 200 ─────────────────▶  done
+                        │
+                        ├── 400 · 401 · 413 ─────▶  drop, no retry
+                        │                           (contract says permanent)
+                        │
+                        └── 5xx · network · timeout
+                                   │
+                                   └──▶ backoff, retry  (max 5 attempts)
+                                          │
+                                          └──▶ exhausted ⇒ drop the batch</pre>
+        <figcaption>
+          <b>Three outcomes, only one of which retries.</b> Treating 400/401/413
+          as permanent is what stops a bad API key or a malformed batch from
+          becoming a retry storm against the ingestion API.
+        </figcaption>
+      </figure>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Knob</th><th>Value</th><th>Why</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Batch cap</td><td class="num">1000</td><td>The ingestion API's <code>maxItems</code>; also the size-based flush trigger</td></tr>
+            <tr><td>Max attempts</td><td class="num">5</td><td>Bounded, so a dead upstream cannot pin a goroutine indefinitely</td></tr>
+            <tr><td>Backoff</td><td class="num">500 ms → 30 s</td><td>Capped exponential with <em>full</em> jitter, so restarts don't synchronize</td></tr>
+            <tr><td>Per-attempt timeout</td><td class="num">30 s</td><td>A hung connection feeds the backoff instead of stalling the worker</td></tr>
+            <tr><td>Compression floor</td><td class="num">1024 B</td><td>Below this, compression costs more CPU than it saves bytes</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        None of these are configurable, and that is intentional. They are
+        properties of the ingestion contract, not of a deployment, and every
+        SDK must agree on them or the API's capacity planning stops meaning
+        anything.
+      </p>
+
+      <div class="note">
+        <p>
+          <strong>zstd holds resources.</strong>
+          <code>zstd.NewWriter</code> spawns its own goroutine pool, so the
+          transport must be closed on shutdown — <code>worker.shutdown</code>
+          does it via <code>defer</code>, after the final drain, when no
+          <code>send</code> can still be running. A client-per-tenant host
+          would otherwise leak steadily; there is a regression test that
+          opens and closes ten clients and counts goroutines.
+        </p>
+      </div>
+    </section>
+
+    <section id="s9">
+      <h3><span class="n">9</span><span>Wire contract</span></h3>
+
+      <p>
+        Both endpoints take <code>{"messages": [ … ]}</code> with flat,
+        snake_case records. The SDK's internal types are deliberately
+        <em>not</em> the wire types — <code>record(capturedAt)</code> maps
+        between them — so the ergonomic Go shape and the ingestion shape can
+        evolve independently.
+      </p>
+
+      <div class="code">
+        <div class="cap">POST /v1/ocpi — one record</div>
+<pre><code>{
+  "captured_at":          "2026-08-27T09:14:22.418Z",
+  "platform_id":          "acme",
+  "platform_name":        "Acme Mobility",
+  "tenant_id":            null,
+  "tenant_name":          null,
+  "direction":            "IN",
+  "http_method":          "POST",
+  "url":                  "/ocpi/2.2/cdrs",
+  "response_status_code": 201,
+  "request_headers":      { "content-type": "application/json" },
+  "request_body":         "eyJpZCI6ImNkci0xIn0=",
+  "response_headers":     { "content-type": "application/json" },
+  "response_body":        null
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="cap">POST /v1/ocpp — one record</div>
+<pre><code>{
+  "charger_id":    "CP-001",
+  "connection_id": "5f2c…",          <span class="c">// SDK-minted, stable per socket</span>
+  "tenant_id":     null,
+  "tenant_name":   null,
+  "captured_at":   "2026-08-27T09:14:22.418Z",
+  "event_type":    2,                <span class="c">// 0 DISCONNECT · 1 CONNECT · 2 MESSAGE</span>
+  "direction":     "FROM_CP",        <span class="c">// required iff event_type == 2</span>
+  "raw_frame":     "WzIsImlkIiwiQm9vdE5vdGlmaWNhdGlvbiIse31d"
+}</code></pre>
+      </div>
+
+      <p>Three conventions matter, and all three are shared with the Node SDK:</p>
+
+      <ul>
+        <li>
+          <strong>Absent means <code>null</code>, never a zero value.</strong>
+          Optional fields are Go pointers or <code>json.RawMessage</code>
+          without <code>omitempty</code>. A missing status code must serialize
+          as <code>null</code>, not <code>0</code> — the difference between
+          "no response" and "status zero" is real, and a dropped key would
+          make it invisible.
+        </li>
+        <li>
+          <strong>Bodies are base64, always.</strong> Both OCPI HTTP bodies
+          and OCPP wire frames. The ingest server decodes before persistence,
+          so downstream consumers see plain UTF-8; encoding keeps the contract
+          uniform across protocols and binary-safe for whatever comes next
+          (ISO 15118 EXI, OCPP 2.0.1 security extensions).
+        </li>
+        <li>
+          <strong>Timestamps are RFC 3339, UTC, millisecond precision</strong>
+          — layout <code>2006-01-02T15:04:05.000Z07:00</code> after
+          <code>.UTC()</code>. The server normalizes anyway; matching it
+          exactly keeps round-trip tests meaningful.
+        </li>
+      </ul>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Go constant</th><th>Wire value</th><th>Means</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>OCPIInbound</code></td><td><code>"IN"</code></td><td>Partner called your server</td></tr>
+            <tr><td><code>OCPIOutbound</code></td><td><code>"OUT"</code></td><td>You called a partner's server</td></tr>
+            <tr><td><code>FromCP</code></td><td><code>"FROM_CP"</code></td><td>Charge point → CSMS</td></tr>
+            <tr><td><code>ToCP</code></td><td><code>"TO_CP"</code></td><td>CSMS → charge point</td></tr>
+            <tr><td><code>OCPPEventTypeDisconnect</code></td><td><code>0</code></td><td>Socket closed</td></tr>
+            <tr><td><code>OCPPEventTypeConnect</code></td><td><code>1</code></td><td>Socket established</td></tr>
+            <tr><td><code>OCPPEventTypeMessage</code></td><td><code>2</code></td><td>Frame; needs direction + frame</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ════════════════════ PART III ════════════════════ -->
+
+    <div class="part">
+      <span class="label">Part III</span>
+      <h2>Using it</h2>
+    </div>
+
+    <section id="s10">
+      <h3><span class="n">10</span><span>Configuration</span></h3>
+
+      <p>
+        Two tiers, and which tier a field is in determines what a bad value
+        does to you.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="Configuration is split into two tiers: hard-required fields that fail Start, and tunable fields that fall back to a default and log a warning">  HARD-REQUIRED         Endpoint · APIKey
+    bad value  ──▶  Start* returns an INERT client + an error
+                    (your boot continues; capture is silently off)
+
+  TUNABLE               everything else
+    zero       ──▶  the default
+    bad value  ──▶  the default, plus a warning when Debug: true
+                    (capture keeps working — a typo can't silence the SDK)</pre>
+        <figcaption>
+          <b>Only two fields can fail.</b> An earlier revision rejected any
+          out-of-range tunable and returned an inert client — which meant
+          <code>DrainTimeout: 3*time.Second</code> silently disabled all capture.
+          The Node policy is the right one.
+        </figcaption>
+      </figure>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Default</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>Endpoint</code></td><td class="num">—</td><td><strong>Required.</strong> http(s) base URL; trailing slashes trimmed</td></tr>
+            <tr><td><code>APIKey</code></td><td class="num">$EVPANDA_API_KEY</td><td><strong>Required.</strong> Sent as <code>X-API-Key</code>; env fallback</td></tr>
+            <tr><td><code>MaxBufferBytes</code></td><td class="num">32 MiB</td><td>Ceiling on everything awaiting delivery. Grows on demand; min 64 KiB</td></tr>
+            <tr><td><code>MaxCaptureBytes</code></td><td class="num">65 536</td><td>Per body / per frame. Oversize drops the whole message</td></tr>
+            <tr><td><code>FlushInterval</code></td><td class="num">5s</td><td>Max time between flushes; a full batch flushes sooner</td></tr>
+            <tr><td><code>DrainTimeout</code></td><td class="num">10s</td><td><code>Close</code> deadline. Explicit values must be ≥ 5s</td></tr>
+            <tr><td><code>Compression</code></td><td class="num">zstd</td><td><code>CompressionZstd</code> or <code>CompressionGzip</code></td></tr>
+            <tr><td><code>LogMode</code></td><td class="num">"errors"</td><td>silent / errors / debug. Unset consults <code>$EVPANDA_LOG</code> — see §12</td></tr>
+            <tr><td><code>Logger</code></td><td class="num">nil</td><td><code>*slog.Logger</code> for the SDK's own output; nil ⇒ <code>slog.Default()</code></td></tr>
+            <tr><td><code>OCPIAllowedHeaders</code></td><td class="num">nil</td><td><em>OCPI only.</em> Extends the allowlist; cannot shrink it</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Config problems are reported out of the box — see §12 for why the SDK
+        speaks by default and how it stays quiet anyway.
+      </p>
+    </section>
+
+    <section id="s11">
+      <h3><span class="n">11</span><span>Lifecycle</span></h3>
+
+      <div class="code">
+        <div class="cap">the whole lifecycle surface</div>
+<pre><code>panda, err := evpanda.StartOCPI(cfg)   <span class="c">// never nil, even on error</span>
+if err != nil {
+	log.Printf("evpanda: %v (running inert)", err)
+}
+
+err = panda.Flush()                    <span class="c">// deliver now, wait for it</span>
+err = panda.Close()                    <span class="c">// drain within DrainTimeout</span>
+err = panda.Shutdown(ctx)              <span class="c">// drain against your own deadline</span></code></pre>
+      </div>
+
+      <p>
+        <strong>An inert client is a real client.</strong> When
+        <code>Start*</code> fails it returns a client with no worker.
+        Every capture method is a no-op, <code>Flush</code> and
+        <code>Close</code> return nil, <code>Connection</code> still hands
+        back a usable session, and the adapters return your handler and
+        transport unwrapped. This is why the constructor returns
+        <code>(*Client, error)</code> rather than failing hard: a telemetry
+        SDK must never be the reason a charging platform won't boot.
+      </p>
+
+      <p>
+        <strong><code>Close</code> is idempotent, and post-close captures are
+        safe.</strong> The client detaches its worker under a lock, so the
+        second <code>Close</code> sees nil and returns nil. A capture that
+        arrives after close finds no worker and returns. Both are ordinary,
+        expected paths — not error conditions.
+      </p>
+
+      <p>
+        <strong>Errors mean drain, not delivery.</strong>
+        <code>Close</code> and <code>Shutdown</code> return
+        <code>ErrDrainIncomplete</code> when the deadline expired with
+        messages still buffered — meaning some telemetry was dropped on the
+        way out. They do <em>not</em> report delivery failures, which are
+        retried and dropped by design. If you want visibility into those, set
+        <code>Debug: true</code> and each dropped batch is logged with its
+        reason.
+      </p>
+
+      <div class="code">
+        <div class="cap">typical shutdown</div>
+<pre><code>ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+defer cancel()
+
+srv.Shutdown(ctx)                      <span class="c">// stop accepting first…</span>
+if err := panda.Shutdown(ctx); err != nil {
+	log.Printf("evpanda: %v", err)     <span class="c">// …then drain what was captured</span>
+}</code></pre>
+      </div>
+
+      <p>
+        Order matters: drain the SDK <em>after</em> the server stops
+        accepting, or you will be draining a buffer that is still filling.
+      </p>
+    </section>
+
+    <section id="s12">
+      <h3><span class="n">12</span><span>Knowing whether it's working</span></h3>
+
+      <p>
+        The SDK discards data in five places by design. Four of them were
+        invisible, which made the single most likely integration bug —
+        an adapter mounted <em>before</em> the host's auth layer — look
+        exactly like a working SDK on an idle system. No error, no log, no
+        signal, and a support ticket that could not be answered.
+      </p>
+
+      <h4>12.1 &nbsp;Counters</h4>
+
+      <p>
+        <code>Stats()</code> is always available: no log mode turns it off,
+        and it is safe on an inert or closed client (a closed one reports its
+        final totals). The counters live on the client rather than the worker
+        precisely so the lifetime tally survives <code>Close</code>.
+      </p>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Counter</th><th>What a high value means</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>Captured</code> = 0</td><td>The capture path is not wired in</td></tr>
+            <tr><td><code>DroppedInvalid</code></td><td>Identity resolution failing — usually an adapter mounted before auth</td></tr>
+            <tr><td><code>DroppedOversize</code></td><td>Bodies exceed <code>MaxCaptureBytes</code></td></tr>
+            <tr><td><code>DroppedEvicted</code></td><td>Upstream can't keep up, or <code>MaxBufferBytes</code> is too small</td></tr>
+            <tr><td><code>DroppedUndeliverable</code></td><td>Network, API key, or ingestion fault</td></tr>
+            <tr><td><code>DroppedPanic</code></td><td>A bug in the SDK</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        One counter per root cause is the whole design goal: it turns an
+        open-ended investigation into a lookup, in production, with no
+        redeploy. It is a pull-based snapshot rather than an emitter, so it
+        composes with Prometheus or OTel without the SDK depending on either.
+      </p>
+
+      <h4>12.2 &nbsp;Logging is on by default, and rate-bounded</h4>
+
+      <div class="rule-box">
+        <span class="tag">The policy, and the hazard it avoids</span>
+        <p>A silent SDK that captures nothing is indistinguishable from a
+        working one, so the default is <b>not</b> silence — problems are
+        reported without the host switching anything on.</p>
+        <p>What makes that safe is that the SDK logs the <b>rate, not the
+        event</b>. The adapter-before-auth fault drops on <em>every request</em>;
+        per-event logging would emit at request rate, flood the host's log
+        pipeline, and cost them real money in ingestion fees. Instead: one
+        summary line per minute, carrying everything that happened in the
+        window.</p>
+      </div>
+
+      <figure>
+<pre role="img" aria-label="Example log output for three scenarios: an identity resolution fault, an ingestion outage, and a lossy shutdown">  adapter mounted before auth — every request fails identity
+
+  WARN "evpanda: captures dropped" window=1m0s captured=12
+       invalid_identity=148302 buffered=0 buffer_bytes=0
+
+  ingestion outage — buffer evicting, batches undeliverable
+
+  WARN "evpanda: captures dropped" window=1m0s captured=40120
+       evicted=9402 undeliverable=24000 buffered=2 buffer_bytes=528
+
+  close, after a lossy run
+
+  WARN "evpanda: client closed" captured=40132 invalid_identity=148302
+       evicted=9402 undeliverable=24000 drain="…deadline exceeded…"
+
+  a healthy client logs none of these — ever</pre>
+        <figcaption>
+          <b>One line per window, zero counters omitted.</b> 250 000 drops and
+          a single drop produce the same amount of log; only the number differs.
+        </figcaption>
+      </figure>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>LogMode</th><th>What you get</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>LogModeSilent</code></td><td>Nothing, ever. Counters still work.</td></tr>
+            <tr><td><code>LogModeErrors</code></td><td><strong>Default.</strong> Config problems at startup, plus the once-a-minute summary when captures are dropping.</td></tr>
+            <tr><td><code>LogModeDebug</code></td><td>Adds per-batch delivery failures, recovered capture faults, and a close summary even on a clean run.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Leaving <code>LogMode</code> unset consults <code>$EVPANDA_LOG</code>,
+        which is the point: an operator can silence the SDK mid-incident with
+        a restart rather than a code change. An explicit field wins over the
+        environment — matching how <code>APIKey</code> resolves — and since
+        most hosts never set the field, the env var still reaches almost every
+        deployment. Anything unrecognised in either falls back to
+        <code>errors</code>; a typo must not be able to silence the SDK, which
+        is the same rule the tunables follow in §10.
+      </p>
+
+      <p>
+        The health line rides the worker's existing <code>select</code>, so
+        reporting costs no extra goroutine and can never overlap a flush. It
+        reports the <em>delta</em> since the last line, so a fault that stops
+        recurring stops being logged.
+      </p>
+    </section>
+
+    <section id="s13">
+      <h3><span class="n">13</span><span>OCPP</span></h3>
+
+      <p>
+        OCPP identity is known at connect time — you authenticated the charge
+        point during the handshake — so there is no resolver. The recommended
+        path is a <strong>session handle</strong>: it mints the connection ID,
+        records the connect, and carries the identity, so per-frame calls
+        carry neither.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="Mapping from session handle calls to ingestion event types and directions">  sess := panda.Connection(identity)   ──▶  event_type 1   CONNECT
+  sess.Message(frame, evpanda.FromCP)  ──▶  event_type 2   MESSAGE   FROM_CP
+  sess.Message(frame, evpanda.ToCP)    ──▶  event_type 2   MESSAGE   TO_CP
+  sess.Disconnect()                    ──▶  event_type 0   DISCONNECT
+
+  one ConnectionID per socket · regenerated on every reconnect
+  └─▶ this is how the ingestion side separates a charger's sessions</pre>
+        <figcaption>
+          <b>Direction is from the charge point's perspective.</b>
+          <code>FromCP</code> for frames it sent you, <code>ToCP</code> for
+          frames you send it — regardless of which side originated the OCPP call.
+        </figcaption>
+      </figure>
+
+      <div class="code">
+        <div class="cap">a CSMS WebSocket handler</div>
+<pre><code>panda, err := evpanda.StartOCPP(evpanda.OCPPConfig{
+	BaseConfig: evpanda.BaseConfig{Endpoint: "https://ingest.evpanda.io"},
+})
+if err != nil {
+	log.Printf("evpanda: %v (running inert)", err)
+}
+defer func() { _ = panda.Close() }()
+
+http.HandleFunc("/ocpp", func(w http.ResponseWriter, r *http.Request) {
+	<span class="c">// Your own charge-point identification — whatever your CSMS already
+	// does at handshake time: parse the path, read Basic auth, check a
+	// client certificate, hit your DB.</span>
+	identity, ok := resolveChargerIdentity(r)
+	if !ok {
+		http.Error(w, "unknown charge point", http.StatusUnauthorized)
+		return
+	}
+
+	conn := upgrade(w, r)
+	sess := panda.Connection(identity)   <span class="c">// records the connect</span>
+	defer sess.Disconnect()              <span class="c">// records the close</span>
+
+	for {
+		frame, err := conn.Read()
+		if err != nil {
+			return
+		}
+		sess.Message(frame, evpanda.FromCP)
+
+		reply := handleFrame(frame)      <span class="c">// your CSMS logic</span>
+		conn.Write(reply)
+		sess.Message(reply, evpanda.ToCP)
+	}
+})</code></pre>
+      </div>
+
+      <p>
+        <code>CaptureConnect</code>, <code>CaptureMessage</code> and
+        <code>CaptureDisconnect</code> are the flat primitives underneath,
+        each taking an <code>OCPPMessageInput</code>. Use them where a session
+        handle does not fit — a connection whose lifetime you do not own, or
+        replaying frames from a log.
+      </p>
+    </section>
+
+    <section id="s14">
+      <h3><span class="n">14</span><span>OCPI, directly</span></h3>
+
+      <p>
+        OCPI traffic flows both ways between roaming partners, and the SDK
+        records each direction separately. The <strong>method name sets the
+        direction</strong> — there is no direction field to pass, and no way
+        to get it backwards.
+      </p>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>You are the…</th><th>Typical case</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>CaptureInboundMessage</code></td>
+              <td>server</td>
+              <td>An eMSP pushes a CDR or session update to your endpoints</td>
+            </tr>
+            <tr>
+              <td><code>CaptureOutboundMessage</code></td>
+              <td>client</td>
+              <td>You pull a partner's locations, or post a token authorization</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="rule-box">
+        <span class="tag">Easy to get wrong</span>
+        <p><code>Identity</code> is always the <b>partner on the other side of
+        the exchange</b> — never your own platform. Inbound and outbound both.
+        A record attributed to yourself is not wrong at the API, it is just
+        useless.</p>
+      </div>
+
+      <div class="code">
+        <div class="cap">direct capture</div>
+<pre><code>identity := evpanda.RoamingIdentity{PlatformID: "acme", PlatformName: "Acme Mobility"}
+
+panda.CaptureInboundMessage(evpanda.OCPIMessageInput{
+	Identity: identity,
+	Data: evpanda.HTTPExchange{
+		Method:          "POST",
+		URL:             "/ocpi/2.2/cdrs",
+		StatusCode:      201,
+		RequestHeaders:  map[string]string{"content-type": "application/json"},
+		ResponseHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:     []byte(`{"id":"cdr-1"}`),
+		ResponseBody:    []byte(`{"status_code":1000}`),
+	},
+})</code></pre>
+      </div>
+
+      <p>
+        <code>StatusCode</code> and both bodies are optional; header maps may
+        be nil. Use this path when you have identity in hand and the adapters
+        do not fit — a framework the middleware cannot wrap, or a replay from
+        an audit log.
+      </p>
+    </section>
+
+    <section id="s15">
+      <h3><span class="n">15</span><span>OCPI adapters</span></h3>
+
+      <p>
+        The adapters do the assembly for you: collect headers and bodies,
+        resolve identity, call the right method. Both are stdlib shapes, so
+        neither pulls a framework dependency.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="Inbound adapter placement: partner, your auth layer which stamps identity on the context, the evpanda middleware, then your handler">  INBOUND — a partner calls your OCPI server
+
+  ┌─────────┐   ┌───────────┐   ┌────────────────────┐   ┌───────────┐
+  │ partner │──▶│ your auth │──▶│ ocpi.Middleware()  │──▶│  handler  │
+  └─────────┘   └───────────┘   └────────────────────┘   └───────────┘
+                      │                    │      ▲             │
+                      │ ContextWith        │      └─────────────┘
+                      │ Identity           │       response teed on the
+                      └───────────────────▶│       way back out
+                                           │
+                                           │  CaptureInboundMessage
+                                           ▼
+                                     ring → worker → ingestion</pre>
+        <figcaption>
+          <b>Mount it after auth.</b> The middleware reads identity that your
+          auth layer already resolved; mounted before it, there is nothing on the
+          context yet and every request passes through uncaptured.
+        </figcaption>
+      </figure>
+
+      <div class="code">
+        <div class="cap">inbound — net/http middleware</div>
+<pre><code>func auth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		partner, ok := lookupPartner(r.Header.Get("Authorization"))
+		if !ok {
+			http.Error(w, "unknown partner", http.StatusUnauthorized)
+			return
+		}
+		ctx := ocpi.ContextWithIdentity(r.Context(), evpanda.RoamingIdentity{
+			PlatformID:   partner.ID,
+			PlatformName: partner.Name,
+		})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+mux := http.NewServeMux()
+mux.Handle("POST /ocpi/2.2/cdrs", cdrHandler)
+
+srv := &amp;http.Server{Handler: auth(ocpi.Middleware(panda)(mux))}</code></pre>
+      </div>
+
+      <p>
+        <code>func(http.Handler) http.Handler</code> is the stdlib middleware
+        shape, so it drops into net/http, chi, gorilla/mux,
+        <code>echo.WrapMiddleware</code> and <code>gin.WrapH</code> unchanged.
+      </p>
+
+      <p>
+        The request body is recorded <strong>as your handler reads it</strong>,
+        via a capped tee on <code>r.Body</code> — a handler that ignores the
+        body records none, and a streaming handler is never forced into
+        memory. This differs from Node, which reads <code>req.body</code>
+        after a body parser has already run; Go middleware executes before the
+        handler, so teeing is the only option that does not consume the
+        stream. The response is teed on its way out through a
+        <code>responseRecorder</code> that implements <code>Unwrap</code>,
+        <code>Flush</code> and <code>Hijack</code>, so
+        <code>http.ResponseController</code> and direct type assertions both
+        still reach the real writer. A hijacked connection is marked and
+        skipped: after an upgrade there is no HTTP response left to describe.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="Outbound adapter placement: your code, http.Client, the evpanda RoundTripper which strips identity headers before dispatch, then the partner">  OUTBOUND — you call a partner's OCPI server
+
+  ┌───────────┐   ┌─────────────┐   ┌────────────────────┐   ┌─────────┐
+  │ your code │──▶│ http.Client │──▶│ ocpi.RoundTripper  │──▶│ partner │
+  └───────────┘   └─────────────┘   └────────────────────┘   └─────────┘
+        │                                     │
+        │  ContextWithIdentity                │  strips X-EVPanda-*
+        └────────────────────────────────────▶│  before dispatch
+                                              │
+                                              │  CaptureOutboundMessage
+                                              ▼  (fires on Body.Close)
+                                        ring → worker → ingestion</pre>
+        <figcaption>
+          <b>Capture completes when you close the response body</b> — which you
+          must do anyway. The caller never waits on capture, and a response that
+          is never closed is never shipped.
+        </figcaption>
+      </figure>
+
+      <div class="code">
+        <div class="cap">outbound — http.RoundTripper</div>
+<pre><code>client := &amp;http.Client{Transport: ocpi.RoundTripper(panda, nil)}  <span class="c">// nil ⇒ DefaultTransport</span>
+
+<span class="c">// You already looked the partner up to get their Token B —
+// stamp identity on the same context.</span>
+ctx = ocpi.ContextWithIdentity(ctx, evpanda.RoamingIdentity{
+	PlatformID:   partner.ID,
+	PlatformName: partner.Name,
+})
+req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
+	partner.BaseURL+"/ocpi/2.2/sessions", body)
+req.Header.Set("Authorization", "Token "+partner.TokenB)
+
+resp, err := client.Do(req)</code></pre>
+      </div>
+
+      <p>
+        Because it is an <code>http.RoundTripper</code>, it captures anything
+        that goes through that client — including a generated OCPI client, as
+        long as it accepts an <code>*http.Client</code>.
+      </p>
+
+      <p>
+        The adapter <strong>never mutates the request you handed it</strong>
+        (the <code>RoundTripper</code> contract requires this — it clones
+        first) and never alters the response. The one change it makes is
+        stripping the <code>X-EVPanda-*</code> headers from the outgoing copy,
+        so a partner never receives them and your <code>TenantID</code> /
+        <code>TenantName</code> stay internal. Stripping happens even on a
+        closed client, so closing mid-flight cannot start leaking them. A
+        transport error propagates unchanged and captures nothing — there was
+        no exchange to record.
+      </p>
+    </section>
+
+    <section id="s16">
+      <h3><span class="n">16</span><span>Identity resolution</span></h3>
+
+      <p>
+        Both adapters resolve identity the same way, and the order is the
+        point.
+      </p>
+
+      <figure>
+<pre role="img" aria-label="Resolution order: the request context is checked first, then the X-EVPanda headers, and a request with neither is served normally but not captured">  DefaultResolver(r)
+
+    1.  IdentityFromContext(r.Context())
+            found ────────────────────────────────▶  use it · stop here
+            miss
+             │
+    2.  X-EVPanda-Platform-Id  +  -Platform-Name
+            set ──────────────────────────────────▶  use it
+            miss
+             │
+             ▼
+        NOT CAPTURED — the request is served exactly as it would
+        have been. No error, no partial record, nothing blocked.</pre>
+        <figcaption>
+          <b>Context wins.</b> A stale or spoofed header cannot override what
+          your auth layer resolved — which is the whole reason the context is
+          checked first rather than second.
+        </figcaption>
+      </figure>
+
+      <div class="code">
+        <div class="cap">ocpi/adapter.go — the context helpers</div>
+<pre><code>func ContextWithIdentity(ctx context.Context, id RoamingIdentity) context.Context
+func IdentityFromContext(ctx context.Context) (RoamingIdentity, bool)</code></pre>
+      </div>
+
+      <p>
+        The context path is preferred for three reasons: it is typed, so a
+        misspelling is a compile error rather than a silently uncaptured
+        request; it cannot leak onto the wire, because there is nothing to
+        strip; and it survives any header rewriting between your auth layer
+        and the adapter. The key is an unexported struct type, so nothing
+        outside the package can collide with or overwrite the value.
+      </p>
+
+      <p>
+        The header path exists for hosts whose identity is already stamped by
+        an upstream proxy or a different process. Four headers, matched
+        case-insensitively, exported as constants:
+      </p>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Constant</th><th>Header</th><th>Field</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>ocpi.HeaderPlatformID</code></td><td><code>X-EVPanda-Platform-Id</code></td><td><code>PlatformID</code> — required</td></tr>
+            <tr><td><code>HeaderPlatformName</code></td><td><code>X-EVPanda-Platform-Name</code></td><td><code>PlatformName</code> — required</td></tr>
+            <tr><td><code>HeaderTenantID</code></td><td><code>X-EVPanda-Tenant-Id</code></td><td><code>TenantID</code> — optional</td></tr>
+            <tr><td><code>HeaderTenantName</code></td><td><code>X-EVPanda-Tenant-Name</code></td><td><code>TenantName</code> — optional</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>15.1 &nbsp;Custom resolvers</h4>
+
+      <p>
+        If identity lives somewhere neither the context nor the headers reach
+        — a client certificate, a path prefix, your own session store —
+        replace the shipped resolver:
+      </p>
+
+      <div class="code">
+        <div class="cap">a path-prefix resolver</div>
+<pre><code>byPath := func(r *http.Request) (evpanda.RoamingIdentity, bool) {
+	name, ok := strings.CutPrefix(r.URL.Path, "/partners/")
+	if !ok {
+		return evpanda.RoamingIdentity{}, false   <span class="c">// not captured</span>
+	}
+	return evpanda.RoamingIdentity{PlatformID: name, PlatformName: name}, true
+}
+
+ocpi.Middleware(panda, ocpi.WithResolver(byPath))
+ocpi.RoundTripper(panda, nil, ocpi.WithResolver(byPath))</code></pre>
+      </div>
+
+      <p>
+        The resolver takes the whole <code>*http.Request</code> rather than
+        Node's synthetic <code>{method, url, requestHeaders}</code> context —
+        in Go the request already carries all of it, including the context. A
+        resolver that panics is treated as "no identity"; the request is
+        served normally either way.
+      </p>
+    </section>
+
+    <!-- ════════════════════ APPENDIX ════════════════════ -->
+
+    <div class="part">
+      <span class="label">Appendix</span>
+      <h2>Notes on the port</h2>
+    </div>
+
+    <section id="s17">
+      <h3><span class="n">A</span><span>Cross-SDK parity</span></h3>
+
+      <p>
+        Layering, naming and wire records track evpanda-node exactly. These
+        are the places Go deliberately differs, and why.
+      </p>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Concern</th><th>Node</th><th>Go</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Delivery loop</td>
+              <td>200 ms poll of a counter</td>
+              <td><code>select</code> on four channels; no polling (§7)</td>
+            </tr>
+            <tr>
+              <td>Flush serialization</td>
+              <td>Shared in-flight promise</td>
+              <td>Single goroutine — structural, no lock</td>
+            </tr>
+            <tr>
+              <td>Constructor failure</td>
+              <td><code>start()</code> swallows, returns inert</td>
+              <td><code>(*Client, error)</code> — inert <em>and</em> the reason</td>
+            </tr>
+            <tr>
+              <td>Shutdown deadline</td>
+              <td><code>close(deadlineMs?)</code></td>
+              <td><code>Close()</code> uses <code>DrainTimeout</code>; <code>Shutdown(ctx)</code> takes yours</td>
+            </tr>
+            <tr>
+              <td>Adapter bridge</td>
+              <td><code>_internal</code> field, stripped from typings</td>
+              <td>Adapters are a subpackage over a 3-method <code>Capturer</code> seam</td>
+            </tr>
+            <tr>
+              <td>Inbound adapter</td>
+              <td>express/connect; reads <code>req.body</code></td>
+              <td>net/http middleware; capped tee on <code>r.Body</code></td>
+            </tr>
+            <tr>
+              <td>Outbound adapter</td>
+              <td>Two: <code>fetch</code> and <code>axios</code></td>
+              <td>One: <code>http.RoundTripper</code> covers both roles</td>
+            </tr>
+            <tr>
+              <td>Identity carrier</td>
+              <td>Headers only</td>
+              <td><code>context.Context</code> first, headers second (§16)</td>
+            </tr>
+            <tr>
+              <td>Message dispatch</td>
+              <td>Type predicate in <code>serialize</code></td>
+              <td><code>record()</code> method on a sealed interface</td>
+            </tr>
+            <tr>
+              <td>Buffer bound</td>
+              <td><code>bufferCapacity</code> — message count</td>
+              <td><code>MaxBufferBytes</code> — bytes (§6)</td>
+            </tr>
+            <tr>
+              <td>Logging default</td>
+              <td><code>debug: false</code> ⇒ completely silent</td>
+              <td><code>LogMode</code> ⇒ rate-bounded errors on (§12)</td>
+            </tr>
+            <tr>
+              <td>Drop visibility</td>
+              <td>None</td>
+              <td><code>Stats()</code> counters, one per root cause</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The <code>context.Context</code> path has no Node equivalent because
+        there is nothing to have one — JS has no request-scoped value carrier
+        that survives a middleware chain the way Go's does. It is the one
+        genuinely new capability in the Go port, rather than a translation.
+      </p>
+
+      <p>
+        The last three rows are policy changes, not language differences, and
+        the reasoning behind each applies to Node and Python unchanged: a
+        message count is an untranslatable memory bound in any runtime, and a
+        silent SDK is indistinguishable from an idle one in any language.
+        Until those SDKs follow, the three differ in observable behaviour —
+        which is worth knowing when a customer runs more than one.
+      </p>
+    </section>
+
+    <section id="s18">
+      <h3><span class="n">B</span><span>Known gaps and open questions</span></h3>
+
+      <p>Recorded so they are decisions rather than oversights.</p>
+
+      <div class="rule-box">
+        <span class="tag">Fixed in the last scan</span>
+        <p><b>The delivery goroutine had no panic recovery.</b> Invariant 2
+        covered the capture path, but the SDK's own goroutine was bare — a
+        fault there would have taken the host's process down, which is
+        precisely what the SDK exists not to do. It now recovers, counts the
+        loss, and logs at Error level; delivery stops rather than the host.</p>
+        <p><b><code>nextDelay</code> overflowed.</b>
+        <code>backoffBase&lt;&lt;attempt</code> goes negative past attempt 34
+        and <code>rand.Int64N</code> panics on that — on the worker
+        goroutine, so it would have hit the bug above. Unreachable at
+        <code>backoffMaxAttempts</code> of 5, and a landmine for whoever
+        raises it. The shift is guarded now.</p>
+      </div>
+
+      <div class="rule-box">
+        <span class="tag">Spec disagreement</span>
+        <p><code>response_status_code</code> is in the ingestion spec's
+        <code>required</code> list but is not marked <code>nullable</code> —
+        yet both Node and Go send <code>null</code> when the status is absent.
+        If Atlas validates strictly, an OCPI capture without a status code will
+        be rejected with a 400. Go matches Node here because Node is the
+        reference, but the spec and both SDKs disagree and one of them
+        should move.</p>
+      </div>
+
+      <ul>
+        <li>
+          <strong>OCPP redaction is a seam, not a feature.</strong> Frames are
+          captured verbatim today. <code>idTag</code> in <code>Authorize</code>
+          is the obvious first candidate.
+        </li>
+        <li>
+          <strong><code>OCPIMessage</code> / <code>OCPPMessage</code> stay
+          unexported.</strong> Node and Python export them, but only as
+          type-only exports; in Go they would be public structs nobody
+          constructs. Exporting them is a one-line change if parity turns out
+          to matter.
+        </li>
+        <li>
+          <strong>The counters stay inside the process.</strong> §12 makes
+          drops visible to whoever runs the host — but EVPanda's own
+          ingestion API still cannot tell a broken integration from an idle
+          one. Piggybacking the counters onto the ingest request (as a
+          header; counts, not content) would let the dashboard flag a
+          customer whose identity resolution is failing without them lifting
+          a finger, turning support from reactive to proactive. It needs an
+          ingestion contract change, so it is a follow-on — but it is where
+          the counters are heading, and it is why they are shaped as a
+          snapshot.
+        </li>
+        <li>
+          <strong>The sink is hard-wired to the ingestion API.</strong>
+          <code>worker.flush</code> calls <code>transport.send</code>
+          directly. Narrowing that to a one-method interface — take a batch,
+          deliver or drop, never error — would make "ship to a local
+          collector instead of the cloud" a config change rather than a
+          rewrite, which is the door to the agent model if a large operator
+          ever wants SDK upgrades decoupled from CSMS deploys. Cheap to do
+          now while there are no callers; expensive once there are.
+        </li>
+        <li>
+          <strong>One client per protocol per process is assumed.</strong>
+          Running many (per tenant, say) works and is leak-tested, but each
+          carries its own goroutine, ring and zstd encoder pool — the memory
+          bound multiplies.
+        </li>
+      </ul>
+    </section>
+
+    <footer>
+      evpanda-go · design document · package evpanda<br>
+      Sources: buffer.go · worker.go · transport.go · client.go · ocpi*.go · ocpp*.go<br>
+      Wire contract: apispec/ingestion-api.yaml · Reference implementation: evpanda-node
+    </footer>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.rail a'));
+    var sections = links
+      .map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); })
+      .filter(Boolean);
+    if (!sections.length || !('IntersectionObserver' in window)) return;
+
+    var visible = new Map();
+
+    function paint() {
+      var best = null;
+      sections.forEach(function (s) {
+        if (visible.get(s.id)) {
+          if (!best || s.getBoundingClientRect().top < best.getBoundingClientRect().top) best = s;
+        }
+      });
+      if (!best) return;
+      links.forEach(function (a) {
+        a.classList.toggle('on', a.getAttribute('href') === '#' + best.id);
+      });
+    }
+
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { visible.set(e.target.id, e.isIntersecting); });
+      paint();
+    }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 });
+
+    sections.forEach(function (s) { io.observe(s); });
+  })();
+</script>

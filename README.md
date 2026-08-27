@@ -1,78 +1,49 @@
 # evpanda-go
 
 [![CI](https://github.com/evpanda-labs/evpanda-go/actions/workflows/build.yml/badge.svg)](https://github.com/evpanda-labs/evpanda-go/actions/workflows/build.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/evpanda-labs/evpanda-go.svg)](https://pkg.go.dev/github.com/evpanda-labs/evpanda-go)
 
-Go SDK for EVPanda. Embed it in your OCPI server or OCPP CSMS;
-it records protocol messages, buffers them in-process, and ships them
-in batches to the EVPanda ingestion API.
+Passive OCPI / OCPP traffic capture for Go. Embed it in your OCPI server or
+OCPP CSMS and it records protocol messages, buffers them in memory, and ships
+them in batches to the EVPanda ingestion API.
 
-## Install
+- **Non-blocking.** Capture calls never wait on the network and never panic
+  into your process.
+- **Bounded.** Memory is capped by a byte budget you set; under pressure the
+  SDK drops its own data rather than yours.
+- **Safe by default.** Secrets are stripped before anything is buffered.
+- **Small.** One dependency (`klauspost/compress`), one background goroutine
+  per client.
+
+## Requirements
+
+Go 1.24 or later.
+
+## Installation
 
 ```sh
-go get github.com/evpanda-labs/evpanda-go@latest
+go get github.com/evpanda-labs/evpanda-go
 ```
 
 ```go
-import "github.com/evpanda-labs/evpanda-go" // package evpanda
+import (
+	evpanda "github.com/evpanda-labs/evpanda-go"
+	"github.com/evpanda-labs/evpanda-go/ocpi" // optional HTTP adapters
+)
 ```
 
 ## Quick start
 
-**The protocol is the client.** `StartOCPI` returns an `*OCPIClient`,
-`StartOCPP` an `*OCPPClient` — pick the one your service speaks. Both
-constructors always return a usable, non-nil client: on a bad config the
-client is an inert no-op and the error describes the problem, so your boot
-never crashes.
+Pick the client for the protocol your service speaks. `StartOCPI` and
+`StartOCPP` always return a usable client — if the config is bad you get an
+inert one plus an error, so a typo can't stop your service from booting.
 
-### OCPI
-
-```go
-package main
-
-import (
-	"log"
-
-	evpanda "github.com/evpanda-labs/evpanda-go"
-)
-
-func main() {
-	// APIKey omitted ⇒ read from EVPANDA_API_KEY.
-	panda, err := evpanda.StartOCPI(evpanda.OCPIConfig{
-		BaseConfig: evpanda.BaseConfig{
-			Endpoint: "https://ingest.evpanda.io",
-		},
-		OCPIAllowedHeaders: []string{"x-custom-trace"}, // extends the allowlist
-	})
-	if err != nil {
-		log.Printf("evpanda: %v (running inert)", err)
-	}
-	defer func() { _ = panda.Close() }() // flushes what's buffered, within DrainTimeout
-
-	panda.CaptureInbound(evpanda.OCPIMessageInput{ // partner → host
-		Identity: evpanda.RoamingIdentity{
-			PlatformID:   "acme",
-			PlatformName: "Acme Mobility",
-			TenantID:     "cpo-42", // tenant is all-or-nothing
-			TenantName:   "CPO 42",
-		},
-		HTTP: evpanda.CapturedHTTP{
-			Method:         "POST",
-			URL:            "/ocpi/2.2/cdrs",
-			StatusCode:     200,
-			RequestHeaders: map[string]string{"content-type": "application/json"},
-			RequestBody:    []byte(`{"id":"..."}`),
-		},
-	})
-}
-```
-
-`CaptureOutbound` (host → partner) is the same call in the other
-direction; the method stamps the direction for you.
+Set `EVPANDA_API_KEY` in the environment, or pass `APIKey` in the config.
 
 ### OCPP
 
-The recommended path is a **session handle** — it mints the connection ID
-and carries the identity, so per-frame calls carry neither:
+`Connection` returns a session handle that mints the connection ID and
+carries the charger identity, so per-frame calls need neither.
 
 ```go
 panda, err := evpanda.StartOCPP(evpanda.OCPPConfig{
@@ -83,77 +54,262 @@ if err != nil {
 }
 defer func() { _ = panda.Close() }()
 
-// On WebSocket connect — records the connect and returns the handle.
-sess := panda.Connection(evpanda.ChargerIdentity{ChargerID: "CP-001"})
-sess.Message([]byte(`[2,"id","BootNotification",{}]`), evpanda.FromCP)
-sess.Disconnect() // on socket close
+func handleCharger(w http.ResponseWriter, r *http.Request) {
+	identity, ok := resolveChargerIdentity(r) // however your CSMS does it
+	if !ok {
+		http.Error(w, "unknown charge point", http.StatusUnauthorized)
+		return
+	}
+
+	conn := upgrade(w, r)
+	sess := panda.Connection(identity) // records the connect
+	defer sess.Disconnect()            // records the close
+
+	for {
+		frame, err := conn.Read()
+		if err != nil {
+			return
+		}
+		sess.Message(frame, evpanda.FromCP)
+
+		reply := handleFrame(frame) // your CSMS logic
+		conn.Write(reply)
+		sess.Message(reply, evpanda.ToCP)
+	}
+}
 ```
 
-`CaptureConnect` / `CaptureMessage` / `CaptureDisconnect` are the flat
-primitives underneath, taking an `OCPPMessageInput`, for one-off capture.
+`Direction` is from the charge point's perspective: `FromCP` for frames it
+sent you, `ToCP` for frames you send it. Use one session per socket — its
+connection ID ties the connect, every frame and the disconnect into a single
+session, and a reconnect gets a fresh one.
 
-Capture is **non-blocking and never panics** — messages are buffered and
-delivered by a background goroutine. One client serves one protocol.
+`CaptureConnect` / `CaptureMessage` / `CaptureDisconnect` are the flat
+primitives underneath, for cases a session handle doesn't fit.
+
+### OCPI
+
+Two methods, one per direction. The method name sets the direction — there's
+no field to get backwards.
+
+| Method | You are the… | Typical case |
+|---|---|---|
+| `CaptureInboundMessage` | server | A partner pushes a CDR to your endpoint |
+| `CaptureOutboundMessage` | client | You pull a partner's locations |
+
+`Identity` is always the **partner on the other side** — never your own
+platform.
+
+```go
+panda, err := evpanda.StartOCPI(evpanda.OCPIConfig{
+	BaseConfig: evpanda.BaseConfig{Endpoint: "https://ingest.evpanda.io"},
+})
+if err != nil {
+	log.Printf("evpanda: %v (running inert)", err)
+}
+defer func() { _ = panda.Close() }()
+
+data := evpanda.HTTPExchange{
+	Method:          "POST",
+	URL:             "/ocpi/2.2/cdrs",
+	StatusCode:      201,
+	RequestHeaders:  map[string]string{"content-type": "application/json"},
+	ResponseHeaders: map[string]string{"content-type": "application/json"},
+}
+data.SetRequestBody(reqBytes)   // copies — reuse your buffer right after
+data.SetResponseBody(respBytes)
+
+panda.CaptureInboundMessage(evpanda.OCPIMessageInput{
+	Identity: evpanda.RoamingIdentity{PlatformID: "acme", PlatformName: "Acme Mobility"},
+	Data:     data,
+})
+```
+
+Use `SetRequestBody` / `SetResponseBody` rather than assigning the fields.
+They copy, so you're free to reuse a pooled reader's buffer as soon as the
+call returns.
+
+`StatusCode` and both bodies are optional; header maps may be nil.
+
+## HTTP adapters
+
+The `ocpi` package wraps stdlib HTTP so you don't have to assemble exchanges
+yourself.
+
+```go
+// Inbound — mount it after whatever authenticates the partner.
+srv := &http.Server{Handler: auth(ocpi.Middleware(panda)(mux))}
+
+// Outbound — a nil base means http.DefaultTransport.
+client := &http.Client{Transport: ocpi.RoundTripper(panda, nil)}
+```
+
+`Middleware` is the standard `func(http.Handler) http.Handler`, so it works
+with net/http, chi, gorilla/mux, `echo.WrapMiddleware` and `gin.WrapH`.
+
+Both adapters take identity from the request **context** first, falling back
+to `X-EVPanda-*` headers. Stamp the context wherever you already look the
+partner up:
+
+```go
+func auth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		partner, ok := lookupPartner(r.Header.Get("Authorization"))
+		if !ok {
+			http.Error(w, "unknown partner", http.StatusUnauthorized)
+			return
+		}
+		ctx := ocpi.ContextWithIdentity(r.Context(), evpanda.RoamingIdentity{
+			PlatformID:   partner.ID,
+			PlatformName: partner.Name,
+		})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+```
+
+Outbound, stamp it on the request you're about to send:
+
+```go
+ctx = ocpi.ContextWithIdentity(ctx, evpanda.RoamingIdentity{
+	PlatformID: partner.ID, PlatformName: partner.Name,
+})
+req, _ := http.NewRequestWithContext(ctx, http.MethodPost, partner.URL, body)
+req.Header.Set("Authorization", "Token "+partner.TokenB)
+resp, err := client.Do(req)
+```
+
+The `X-EVPanda-*` headers are stripped before dispatch, so partners never see
+them. If identity lives somewhere else entirely — a client certificate, a
+path prefix — pass your own resolver:
+
+```go
+byPath := func(r *http.Request) (evpanda.RoamingIdentity, bool) {
+	name, ok := strings.CutPrefix(r.URL.Path, "/partners/")
+	if !ok {
+		return evpanda.RoamingIdentity{}, false // not captured
+	}
+	return evpanda.RoamingIdentity{PlatformID: name, PlatformName: name}, true
+}
+
+ocpi.Middleware(panda, ocpi.WithResolver(byPath))
+ocpi.RoundTripper(panda, nil, ocpi.WithResolver(byPath))
+```
+
+A request with no resolvable identity is served exactly as it would have
+been — it just isn't captured.
 
 ## Identity
 
-Every message carries its own identity; the SDK validates it and silently
-drops what it can't attribute (it never panics back at you).
+Every message carries its own identity; messages the SDK can't attribute are
+dropped rather than shipped as orphans.
 
-- **OCPI →** `RoamingIdentity`: `PlatformID` + `PlatformName` required.
-- **OCPP →** `ChargerIdentity`: `ChargerID` required.
-- `TenantID` + `TenantName` are optional but **all-or-nothing** — supply
-  both or neither.
+| Protocol | Type | Required fields |
+|---|---|---|
+| OCPI | `RoamingIdentity` | `PlatformID`, `PlatformName` |
+| OCPP | `ChargerIdentity` | `ChargerID` |
 
-Identity is per message, not global config — one OCPI process can serve
-many platforms and tenants; one OCPP process many chargers. OCPP identity
-is known at connect time, so the session handle carries it for you.
+`TenantID` and `TenantName` are optional but **all-or-nothing** — set both or
+neither. Call `id.Valid()` to check one yourself.
 
 ## Configuration
 
-`Endpoint` and `APIKey` are required (`APIKey` may come from the
-`EVPANDA_API_KEY` env var). Every other field falls back to its default
-when left at the zero value; an out-of-range value is rejected at `Start*`
-(inert client + error).
+`Endpoint` and `APIKey` are required; `APIKey` falls back to
+`$EVPANDA_API_KEY`. Everything else takes its default when left at the zero
+value, and an out-of-range value falls back to that default with a warning
+rather than failing.
 
-| Field                | Default            | Description                                                              |
-|----------------------|--------------------|--------------------------------------------------------------------------|
-| `Endpoint`           | —                  | Ingestion API base URL (`http(s)://…`).                                  |
-| `APIKey`             | `$EVPANDA_API_KEY` | Sent as `X-API-Key`. Falls back to the env var when empty.               |
-| `BufferCapacity`     | `10000`            | Ring-buffer slots. Worst-case mem = `BufferCapacity × MaxCaptureBytes`.  |
-| `MaxCaptureBytes`    | `65536`            | Per-body / per-frame cap. An oversize body drops the whole message.      |
-| `FlushInterval`      | `5s`               | Max time between flushes (`time.Duration`).                              |
-| `DrainTimeout`       | `10s`              | `Close` drain deadline. An explicit value must be ≥ `5s`.                |
-| `Compression`        | `"zstd"`           | `"zstd"` or `"gzip"`.                                                    |
-| `Debug`              | `false`            | Master log switch; silent by default.                                    |
-| `Logger`             | `nil`              | `*slog.Logger` used when `Debug` is true; if nil, `slog.Default()`.      |
-| `OCPIAllowedHeaders` | `nil`              | *(OCPIConfig only)* Extra headers to capture on top of the default allowlist. |
+| Field | Default | Description |
+|---|---|---|
+| `Endpoint` | — | Ingestion API base URL (`http(s)://…`) |
+| `APIKey` | `$EVPANDA_API_KEY` | Sent as `X-API-Key` |
+| `MaxBufferBytes` | `32 MiB` | Memory ceiling for undelivered captures; oldest are evicted past it |
+| `MaxCaptureBytes` | `64 KiB` | Per body / per frame cap; an oversize body drops the whole message |
+| `FlushInterval` | `5s` | Maximum time between deliveries |
+| `DrainTimeout` | `10s` | How long `Close` waits to drain (minimum `5s`) |
+| `Compression` | `zstd` | `CompressionZstd` or `CompressionGzip` |
+| `LogMode` | `errors` | `LogModeSilent`, `LogModeErrors`, `LogModeDebug` |
+| `Logger` | `slog.Default()` | Where the SDK's own logs go |
+| `OCPIAllowedHeaders` | — | *(OCPI only)* Extra headers to capture, on top of the defaults |
 
-## Behavior
+## Monitoring
 
-- **Batched delivery.** Messages flush when the buffer reaches 1000 or on
-  `FlushInterval`, whichever comes first; each POST carries at most 1000
-  records.
-- **Backpressure = drop-oldest.** If the upstream is slow or down, the ring
-  caps at `BufferCapacity` and discards the oldest. Your app never blocks.
-- **Redaction at the chokepoint.** Every capture goes through one
-  validate → cap → redact step before the queue. OCPI keeps a **header
-  allowlist** (`OCPIAllowedHeaders` extends it, never shrinks it —
-  `Authorization`, `Cookie`, `X-API-Key` and anything else unlisted fall
-  off) and masks the `token` field on `/credentials` bodies; OCPP frames
-  are captured verbatim today, behind a seam ready for masking.
-- **Resilient transport.** Bounded retry (max 5 attempts) with capped
-  exponential backoff + full jitter on other status / network errors;
-  permanent rejections (400/401/413) are dropped without retry storms.
-  Payloads under 1 KiB are sent uncompressed.
-- **Graceful shutdown.** `Close()` flushes what's buffered within
-  `DrainTimeout`, then stops. Idempotent; post-close captures are safe
-  no-ops. Returns `evpanda.ErrDrainIncomplete` if the deadline elapsed
-  with messages still buffered, else `nil`.
-- **Error reporting.** `Flush()` and `Close()` return errors but never
-  panic into the caller. Delivery failures are retried/dropped by design
-  and not surfaced as return values; with `Debug: true` each dropped batch
-  is logged.
+### Counters
+
+`Stats()` works on any client, always — including after `Close`. Each field
+points at one cause:
+
+```go
+s := panda.Stats()
+```
+
+| Field | What a high value means |
+|---|---|
+| `Captured` **= 0** | Capture isn't wired in |
+| `DroppedInvalid` | Identity resolution failing — with adapters, usually mounted before your auth layer |
+| `DroppedOversize` | Bodies exceed `MaxCaptureBytes` |
+| `DroppedEvicted` | Upstream can't keep up, or `MaxBufferBytes` is too small |
+| `DroppedUndeliverable` | Network, API key, or ingestion fault |
+| `DroppedPanic` | A bug in the SDK — please report it |
+
+Plus `BufferedMessages` and `BufferBytes` as live gauges. Wire them into
+whatever you already run:
+
+```go
+prometheus.MustRegister(prometheus.NewCounterFunc(opts, func() float64 {
+	return float64(panda.Stats().DroppedEvicted)
+}))
+```
+
+### Logging
+
+The SDK reports problems to your logger by default, at a bounded rate: at
+most one summary line per minute, and nothing at all while it's healthy.
+
+```
+level=WARN msg="evpanda: captures dropped" window=1m0s captured=12 invalid_identity=148302 buffered=0 buffer_bytes=0
+```
+
+Set `LogMode` to change that, or `EVPANDA_LOG=silent|errors|debug` to change
+it without touching code:
+
+| Mode | Output |
+|---|---|
+| `LogModeSilent` | Nothing. Counters still work. |
+| `LogModeErrors` | Default. Config problems at startup, plus the per-minute summary. |
+| `LogModeDebug` | Adds per-batch delivery failures and a summary on close. |
+
+## Shutdown
+
+```go
+srv.Shutdown(ctx)                  // stop accepting first…
+if err := panda.Shutdown(ctx); err != nil {
+	log.Printf("evpanda: %v", err) // …then drain what was captured
+}
+```
+
+`Close()` does the same using `DrainTimeout` instead of your context. Both
+are idempotent, and captures after them are safe no-ops. They return
+`evpanda.ErrDrainIncomplete` if the deadline passed with messages still
+buffered.
+
+`Flush()` forces an immediate delivery and waits for it. It blocks for as
+long as the transport's retries take, so use it at shutdown or while
+debugging — not on a request path.
+
+## Delivery behaviour
+
+Captures are batched and delivered by one background goroutine: whenever
+1000 messages are waiting or `FlushInterval` elapses, whichever comes first.
+Failed deliveries are retried with exponential backoff and jitter; a batch
+that still can't be delivered is dropped, as are the oldest captures once the
+buffer is full. **Delivery is best-effort by design** — the SDK will always
+choose losing telemetry over slowing down your service.
+
+## Documentation
+
+- [API reference on pkg.go.dev](https://pkg.go.dev/github.com/evpanda-labs/evpanda-go)
+- [Architecture and design notes](docs/design.html) — how it works, and why
 
 ## Development
 
@@ -163,3 +319,7 @@ just vet
 just test   # go test -race -count=1 ./...
 just build
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

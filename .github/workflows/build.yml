@@ -5,20 +5,23 @@ on:
     branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Build
+    name: Build (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # go.mod floor is 1.24 (latest klauspost/compress requires it).
-        # Test the floor + tip.
+        # Test the floor and whatever Go currently ships.
         go: ["1.24", "stable"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
 
@@ -33,13 +36,32 @@ jobs:
 
       - run: go vet ./...
 
-      # Lint once (on the newest Go), in this same job. action @v7 ships
-      # golangci-lint v2 (v6 is the last v1 line); version pinned to match
-      # the v2 config schema in .golangci.yml.
-      - if: matrix.go == 'stable'
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.10.1
-
       # -race exercises the buffer mutex / worker goroutine under contention.
       - run: go test -race -count=1 ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The go.mod floor, read from the file so there is no second copy of
+      # the number to drift — and deliberately not `stable`. golangci-lint
+      # embeds the go/types from the Go release it was built with and
+      # panics outright on source newer than that, so a floating toolchain
+      # breaks this job the day Go ships a new version, with a type-checker
+      # stack trace rather than a useful message.
+      #
+      # The floor is also the safest choice: the linter's type-checker only
+      # ever has to be new enough, and it is the version consumers are
+      # promised. Lint does not need a newer toolchain — the build matrix
+      # above already covers those.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # action @v9 ships golangci-lint v2; the version is pinned so a lint
+      # run is reproducible and a new release cannot fail an unrelated PR.
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
