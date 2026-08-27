@@ -1,5 +1,25 @@
 package evpanda
 
+import (
+	"bytes"
+	"strings"
+)
+
+// Message types. These must match apispec/ingestion-api.yaml.
+// Protocol and the capture timestamp are SDK-owned (they live on the
+// internal envelope, see buffer.go) — deliberately not on these.
+
+// Protocol routes a batch to POST /v1/{protocol} on the ingestion API.
+// One client serves exactly one protocol.
+type Protocol string
+
+const (
+	// ProtocolOCPI is the OCPI ingestion route.
+	ProtocolOCPI Protocol = "ocpi"
+	// ProtocolOCPP is the OCPP ingestion route.
+	ProtocolOCPP Protocol = "ocpp"
+)
+
 // OCPIDirection is an OCPI message's direction relative to the host.
 // The values are the exact wire strings the ingestion API validates.
 type OCPIDirection string
@@ -22,7 +42,8 @@ const (
 	FromCP OCPPDirection = "FROM_CP"
 )
 
-// OCPPEventType is an OCPP WebSocket lifecycle event.
+// OCPPEventType is an OCPP WebSocket lifecycle event, mapped onto the
+// ingestion API's event_type.
 type OCPPEventType int
 
 const (
@@ -34,31 +55,84 @@ const (
 	OCPPEventTypeMessage OCPPEventType = 2
 )
 
-// CapturedHTTP is a captured HTTP exchange. Bodies larger than
-// MaxCaptureBytes cause the whole message to be dropped at capture.
-type CapturedHTTP struct {
-	Method          string
-	URL             string
-	StatusCode      int
-	RequestHeaders  map[string]string
+// HTTPExchange is a captured HTTP request/response pair. Bodies are raw
+// bytes; a body larger than MaxCaptureBytes drops the whole message at
+// capture rather than storing a truncated one.
+//
+// Set the bodies with [HTTPExchange.SetRequestBody] and
+// [HTTPExchange.SetResponseBody] rather than assigning the fields. The
+// setters copy, so the SDK owns what it buffers and you are free to reuse
+// your own buffer the moment the capture call returns.
+type HTTPExchange struct {
+	// Method is the HTTP method, e.g. "POST".
+	Method string
+	// URL is the request URL as seen by the host.
+	URL string
+	// StatusCode is the response status; zero is sent as null.
+	StatusCode int
+	// RequestHeaders is filtered by the OCPI header allowlist.
+	RequestHeaders map[string]string
+	// ResponseHeaders is filtered by the OCPI header allowlist.
 	ResponseHeaders map[string]string
-	RequestBody     []byte
-	ResponseBody    []byte
+	// RequestBody is the raw request body. Optional. Prefer
+	// SetRequestBody, which copies.
+	RequestBody []byte
+	// ResponseBody is the raw response body. Optional. Prefer
+	// SetResponseBody, which copies.
+	ResponseBody []byte
 }
 
-// OCPIMessageInput is the input to [OCPIClient.CaptureInbound] and
-// [OCPIClient.CaptureOutbound]; the client stamps the direction.
+// SetRequestBody records b as the captured request body, copying it so
+// the exchange owns the bytes.
+//
+// Copying is what makes the field safe to hand over: a capture is held in
+// memory until the next flush, so a body assigned straight from a pooled
+// or reused buffer would be serialized after the host had already
+// overwritten it. An empty or nil body is recorded as absent, which
+// serializes as JSON null.
+func (x *HTTPExchange) SetRequestBody(b []byte) {
+	x.RequestBody = cloneBody(b)
+}
+
+// SetResponseBody records b as the captured response body, copying it so
+// the exchange owns the bytes. See [HTTPExchange.SetRequestBody].
+func (x *HTTPExchange) SetResponseBody(b []byte) {
+	x.ResponseBody = cloneBody(b)
+}
+
+// own copies both bodies so the exchange no longer aliases the caller's
+// memory. The chokepoint calls it before redaction, which is what lets a
+// redactor rewrite a body in place and lets the host reuse its buffers as
+// soon as the capture call returns.
+func (x *HTTPExchange) own() {
+	x.RequestBody = cloneBody(x.RequestBody)
+	x.ResponseBody = cloneBody(x.ResponseBody)
+}
+
+// cloneBody copies b, normalizing empty to nil so an absent body
+// serializes as JSON null rather than an empty string.
+func cloneBody(b []byte) []byte {
+	if len(b) == 0 {
+		return nil
+	}
+	return bytes.Clone(b)
+}
+
+// OCPIMessageInput is the input to [OCPIClient.CaptureInboundMessage] and
+// [OCPIClient.CaptureOutboundMessage]. There is no direction field — the
+// method you call stamps it.
 type OCPIMessageInput struct {
-	// Identity attributes the message. Invalid ⇒ message dropped.
+	// Identity attributes the message to a roaming partner. Invalid ⇒
+	// message dropped.
 	Identity RoamingIdentity
-	// HTTP is the captured exchange.
-	HTTP CapturedHTTP
+	// Data is the captured HTTP exchange.
+	Data HTTPExchange
 }
 
 // OCPPMessageInput is the input shape for the three flat OCPP capture
 // primitives. Data and Direction are only used by
 // [OCPPClient.CaptureMessage], which requires both and drops the message
-// if either is missing; connect/disconnect carry no frame.
+// if either is missing; connect and disconnect carry no frame.
 type OCPPMessageInput struct {
 	// Identity is the charge point this event belongs to. Invalid ⇒
 	// message dropped.
@@ -73,28 +147,81 @@ type OCPPMessageInput struct {
 	Direction OCPPDirection
 }
 
-// ocpiMessage is the internal buffered form of an OCPI capture.
+// ocpiMessage is the internal buffered form of an OCPI capture: the input
+// plus the direction the capture method stamped.
 type ocpiMessage struct {
 	Direction OCPIDirection
 	Identity  RoamingIdentity
-	HTTP      CapturedHTTP
+	Data      HTTPExchange
 }
 
-// ocppMessage is the internal buffered form of an OCPP capture.
+// ocppMessage is the internal buffered form of an OCPP capture. Direction
+// is empty for connect and disconnect events.
 type ocppMessage struct {
 	EventType    OCPPEventType
 	Identity     ChargerIdentity
 	ConnectionID string
-	// direction is nil for connect/disconnect events.
-	Direction *OCPPDirection
-	Payload   []byte
+	Direction    OCPPDirection
+	Payload      []byte
 }
 
-// anyMessage is an ocpiMessage or ocppMessage; it lets the buffer hold
-// either without a protocol tag.
-type anyMessage interface {
-	isMessage()
+// message is the sealed interface the ring buffer holds, so it can carry
+// either protocol without a tag. Implementations map themselves onto the
+// ingestion wire record (record, in transport.go) and account for their
+// own footprint against the buffer budget (size, in buffer.go).
+type message interface {
+	record(capturedAt string) any
+	size() int
 }
 
-func (ocpiMessage) isMessage() {}
-func (ocppMessage) isMessage() {}
+// ── Identity ─────────────────────────────────────────────────────────────
+//
+// Per-message identity: the two protocol shapes and their validation
+// rules. Valid is the single rule source — every capture path goes
+// through it, and adapters use it to decide whether instrumenting a
+// request is worth the work. Nothing here fails loudly; an invalid
+// identity means the caller drops the message.
+
+// RoamingIdentity is the OCPI roaming context for a message. PlatformID
+// and PlatformName are required; TenantID and TenantName are optional but
+// all-or-nothing (supply both or neither).
+type RoamingIdentity struct {
+	PlatformID   string
+	PlatformName string
+	TenantID     string
+	TenantName   string
+}
+
+// ChargerIdentity is the OCPP charger context for a message. ChargerID is
+// required; TenantID and TenantName are optional but all-or-nothing.
+type ChargerIdentity struct {
+	ChargerID  string
+	TenantID   string
+	TenantName string
+}
+
+func isNonEmpty(v string) bool {
+	return strings.TrimSpace(v) != ""
+}
+
+// isTenantPairValid reports whether tenant ID and name are both set or
+// both empty.
+func isTenantPairValid(tenantID, tenantName string) bool {
+	return isNonEmpty(tenantID) == isNonEmpty(tenantName)
+}
+
+// Valid reports whether the identity can attribute a message: PlatformID
+// and PlatformName present, and the tenant pair all-or-nothing. The SDK
+// silently drops messages that fail it.
+func (id RoamingIdentity) Valid() bool {
+	return isNonEmpty(id.PlatformID) &&
+		isNonEmpty(id.PlatformName) &&
+		isTenantPairValid(id.TenantID, id.TenantName)
+}
+
+// Valid reports whether the identity can attribute a message: ChargerID
+// present, and the tenant pair all-or-nothing.
+func (id ChargerIdentity) Valid() bool {
+	return isNonEmpty(id.ChargerID) &&
+		isTenantPairValid(id.TenantID, id.TenantName)
+}
