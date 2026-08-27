@@ -1,28 +1,122 @@
-# Go modules are "published" by pushing a semver git tag — there is no
-# registry upload step (consumers fetch via `go get ...@vX.Y.Z` straight
-# from the proxy). This workflow is a release *gate*: it re-runs the full
-# suite on the tag so a broken commit can't be tagged silently.
+# Go modules have no registry and nothing to upload: a version exists the
+# moment a semver tag is pushed, and proxy.golang.org fetches it straight
+# from this repo. So this workflow is not an upload step — it is the gate
+# that keeps a broken commit from becoming a permanent version (tags are
+# immutable on the proxy once fetched), plus the two chores that follow:
+# cut a GitHub Release, and ask the proxy for the version so pkg.go.dev
+# indexes it in minutes rather than whenever a stranger first fetches it.
+#
+# To release: `git tag v0.2.0 && git push origin v0.2.0`.
 name: Release
 
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Verify tagged commit
+  validate-tag:
+    name: Validate tag
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v7
-        with:
-          go-version: stable
+      - name: Check the tag is a Go-compatible semver version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
 
-      - run: go build ./...
-      - run: go vet ./...
-      - run: go test -race -count=1 ./...
+          # Go requires the leading v and strict semver; anything else is
+          # not a module version and the proxy will ignore it.
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::'$TAG' is not a Go module version (want vX.Y.Z or vX.Y.Z-pre)"
+            exit 1
+          fi
+
+          # Major 2 and above must live at a /vN module path, or consumers
+          # silently keep resolving the v1 line. This is the single easiest
+          # Go release mistake to make, so fail loudly rather than ship it.
+          major="$(printf '%s' "$TAG" | sed -E 's|^v([0-9]+)\..*|\1|')"
+          if [ "$major" -ge 2 ]; then
+            if ! grep -Eq "^module .+/v${major}\$" go.mod; then
+              echo "::error::$TAG needs the module path to end in /v${major}; go.mod says:"
+              grep '^module ' go.mod
+              exit 1
+            fi
+          fi
+
+          echo "$TAG is a valid module version"
+
+      - name: Check the tag is on master
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor "$TAG" origin/master; then
+            echo "::error::$TAG is not an ancestor of master — release from master only"
+            exit 1
+          fi
+          echo "$TAG is on master"
+
+  # The same gate a pull request clears, re-run against the tagged commit.
+  checks:
+    needs: validate-tag
+    uses: ./.github/workflows/checks.yml
+
+  publish:
+    name: Publish
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the GitHub Release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # release notes are generated from history
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Pre-1.0 and pre-release tags are marked as such so consumers
+          # are not told an unstable version is the latest stable one.
+          flags=(--generate-notes --title "$TAG")
+          case "$TAG" in
+            v0.*|*-*) flags+=(--prerelease) ;;
+          esac
+          gh release create "$TAG" "${flags[@]}"
+
+      - name: Publish to the Go module proxy
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mod="github.com/evpanda-labs/evpanda-go"
+
+          # Asking the proxy for a version it has not seen is what makes it
+          # fetch and cache from this repo; pkg.go.dev indexes from the
+          # proxy shortly after. Without this the module stays invisible
+          # until somebody happens to `go get` it.
+          #
+          # (Module paths with uppercase letters need !-escaping in proxy
+          # URLs. This one is all lowercase, so the path is used as-is.)
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS "https://proxy.golang.org/${mod}/@v/${TAG}.info"; then
+              echo
+              echo "::notice::${mod}@${TAG} is live on proxy.golang.org"
+              echo "Docs: https://pkg.go.dev/${mod}@${TAG}"
+              exit 0
+            fi
+            echo "proxy has not picked up ${TAG} yet (attempt ${attempt}/6), waiting..."
+            sleep 20
+          done
+
+          # Not fatal: the version is already published by virtue of the
+          # tag existing. It will be indexed on the first real fetch.
+          echo "::warning::proxy did not serve ${TAG} within ~2 minutes; it will index on first fetch"
