@@ -12,7 +12,6 @@ package evpanda_test
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -53,13 +52,7 @@ func startMockUpstream() *mockUpstream {
 	m := &mockUpstream{status: http.StatusOK}
 	m.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var reader io.Reader = r.Body
-		switch r.Header.Get("content-encoding") {
-		case "gzip":
-			if gz, err := gzip.NewReader(r.Body); err == nil {
-				defer gz.Close()
-				reader = gz
-			}
-		case "zstd":
+		if r.Header.Get("content-encoding") == "zstd" {
 			if zr, err := zstd.NewReader(r.Body); err == nil {
 				defer zr.Close()
 				reader = zr
@@ -467,12 +460,13 @@ func TestOCPPPrimitivesValidation(t *testing.T) {
 	}
 }
 
-func TestGzipAndChunking(t *testing.T) {
+// A batch larger than the API's 1000-record cap is split across requests,
+// in order, with each chunk compressed.
+func TestBatchChunking(t *testing.T) {
 	mock := startMockUpstream()
 	defer mock.close()
 
 	cfg := ocpiConfig(mock.server.URL)
-	cfg.Compression = "gzip" // exercise the opt-in gzip path explicitly
 	cfg.MaxBufferBytes = 8 << 20
 	panda, err := evpanda.StartOCPI(cfg)
 	if err != nil {
@@ -501,18 +495,18 @@ func TestGzipAndChunking(t *testing.T) {
 			t.Fatalf("post had %d records (>1000)", len(p.records))
 		}
 		switch enc := p.headers.Get("content-encoding"); enc {
-		case "gzip":
+		case "zstd":
 			compressed++
 		case "": // identity — only legitimate for a sub-1KiB payload
 			if len(p.records) > 5 {
 				t.Fatalf("post of %d records went out uncompressed", len(p.records))
 			}
 		default:
-			t.Fatalf("content-encoding = %q, want the configured gzip", enc)
+			t.Fatalf("content-encoding = %q, want zstd or identity", enc)
 		}
 	}
 	if compressed == 0 {
-		t.Fatal("no post used the configured gzip codec")
+		t.Fatal("no post was compressed")
 	}
 
 	// FIFO order preserved across the chunked POSTs.
@@ -723,7 +717,6 @@ func TestOutOfRangeTunablesFallBackAndWarn(t *testing.T) {
 			DrainTimeout:    2 * time.Second, // below the 5s minimum ⇒ default
 			MaxBufferBytes:  -1,              // ⇒ default
 			MaxCaptureBytes: -1,              // ⇒ default
-			Compression:     "brotli",        // unknown codec ⇒ default
 			Logger:          slog.New(slog.NewTextHandler(&logs, nil)),
 			// LogMode deliberately unset — this is the out-of-the-box path.
 		},
@@ -739,7 +732,7 @@ func TestOutOfRangeTunablesFallBackAndWarn(t *testing.T) {
 	panda.CaptureInboundMessage(makeOCPI(1))
 	waitFor(t, func() bool { return len(mock.recordsFor("/v1/ocpi")) == 1 }, 3*time.Second)
 
-	for _, field := range []string{"DrainTimeout", "MaxBufferBytes", "MaxCaptureBytes", "Compression"} {
+	for _, field := range []string{"DrainTimeout", "MaxBufferBytes", "MaxCaptureBytes"} {
 		if !strings.Contains(logs.String(), field) {
 			t.Fatalf("no warning logged for %s: %s", field, logs.String())
 		}
@@ -1000,8 +993,9 @@ func TestNoGoroutineLeakAfterClose(t *testing.T) {
 
 	const clients = 10
 	for i := range clients {
+		// Every client spawns a zstd encoder, which owns goroutines of
+		// its own — the thing most likely to leak on close.
 		cfg := ocpiConfig(mock.server.URL)
-		cfg.Compression = evpanda.CompressionZstd // spawns its own encoder pool
 		panda, err := evpanda.StartOCPI(cfg)
 		if err != nil {
 			t.Fatalf("StartOCPI: %v", err)
@@ -1093,13 +1087,13 @@ func TestRetriesTransientFailure(t *testing.T) {
 	}
 }
 
-// zstd is the default codec, and payloads below the compression floor go
-// out uncompressed rather than paying the CPU.
-func TestDefaultCompressionIsZstd(t *testing.T) {
+// zstd is the only codec, and payloads below the compression floor go out
+// uncompressed rather than paying the CPU for nothing.
+func TestCompressionIsZstdAboveTheFloor(t *testing.T) {
 	mock := startMockUpstream()
 	defer mock.close()
 
-	cfg := ocpiConfig(mock.server.URL) // Compression unset ⇒ zstd
+	cfg := ocpiConfig(mock.server.URL)
 	cfg.MaxBufferBytes = 8 << 20
 	panda, err := evpanda.StartOCPI(cfg)
 	if err != nil {
@@ -1122,7 +1116,7 @@ func TestDefaultCompressionIsZstd(t *testing.T) {
 	posts := mock.postsFor("/v1/ocpi")
 	last := posts[len(posts)-1]
 	if got := last.headers.Get("content-encoding"); got != "zstd" {
-		t.Fatalf("content-encoding = %q, want zstd by default", got)
+		t.Fatalf("content-encoding = %q, want zstd", got)
 	}
 	// The mock decoded it, so the round trip actually works.
 	if len(last.records) != 200 {

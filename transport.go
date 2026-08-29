@@ -1,7 +1,7 @@
 package evpanda
 
-// Hand-rolled transport over net/http. Body: JSON; zstd by default, gzip
-// when configured, identity for tiny payloads. It owns the bounded retry:
+// Hand-rolled transport over net/http. Body: JSON, zstd-compressed above
+// a size floor. It owns the bounded retry:
 // 200 or 400/401/413 is terminal, 5xx and network errors back off; the
 // caller never retries. It never panics.
 //
@@ -11,7 +11,6 @@ package evpanda
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -65,7 +64,6 @@ type contentEncoding string
 
 const (
 	encodingIdentity contentEncoding = "identity"
-	encodingGzip     contentEncoding = "gzip"
 	encodingZstd     contentEncoding = "zstd"
 )
 
@@ -237,9 +235,10 @@ func (c *apiClient) post(ctx context.Context, p protocol, body []byte, encoding 
 
 type transport struct {
 	client *apiClient
-	// zstdEnc is non-nil for zstd (the default); nil means gzip. It is
-	// safe for concurrent EncodeAll and must be closed on shutdown, since
-	// it holds worker goroutines of its own.
+	// zstdEnc is the body codec. It is safe for concurrent EncodeAll and
+	// must be closed on shutdown, since it holds goroutines of its own.
+	// Nil only if the encoder could not be built, in which case bodies go
+	// out uncompressed — which the ingestion API accepts.
 	zstdEnc *zstd.Encoder
 	// logger records dropped batches; nil means silent.
 	logger  *slog.Logger
@@ -258,11 +257,11 @@ func newTransport(c resolvedConfig, st *stats) *transport {
 		logMode: c.logMode,
 		stats:   st,
 	}
-	if c.compression == CompressionZstd {
-		// Fall back to gzip if the encoder won't build.
-		if enc, err := zstd.NewWriter(nil); err == nil {
-			t.zstdEnc = enc
-		}
+	// Building this with default options does not fail in practice; if it
+	// ever did, compress below degrades to identity rather than failing
+	// the send.
+	if enc, err := zstd.NewWriter(nil); err == nil {
+		t.zstdEnc = enc
 	}
 	return t
 }
@@ -277,24 +276,15 @@ func (t *transport) close() {
 	t.client.http.CloseIdleConnections()
 }
 
-// compress encodes raw with the configured codec, degrading to identity
-// on any failure or for payloads below compressMinBytes.
+// compress zstd-encodes raw, leaving it alone below compressMinBytes —
+// where the CPU costs more than the bytes saved — and if the encoder is
+// unavailable. The ingestion API accepts an uncompressed body, so
+// identity is always a safe answer.
 func (t *transport) compress(raw []byte) ([]byte, contentEncoding) {
-	if len(raw) < compressMinBytes {
+	if len(raw) < compressMinBytes || t.zstdEnc == nil {
 		return raw, encodingIdentity
 	}
-	if t.zstdEnc != nil {
-		return t.zstdEnc.EncodeAll(raw, nil), encodingZstd
-	}
-	var b bytes.Buffer
-	w := gzip.NewWriter(&b)
-	if _, err := w.Write(raw); err != nil {
-		return raw, encodingIdentity
-	}
-	if err := w.Close(); err != nil {
-		return raw, encodingIdentity
-	}
-	return b.Bytes(), encodingGzip
+	return t.zstdEnc.EncodeAll(raw, nil), encodingZstd
 }
 
 // send serializes, compresses, and POSTs the batch with bounded retry:

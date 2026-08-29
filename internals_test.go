@@ -601,8 +601,7 @@ func TestResolveBaseConfigDefaults(t *testing.T) {
 	if r.maxBufferBytes != defaultMaxBufferBytes ||
 		r.maxCaptureBytes != defaultMaxCaptureBytes ||
 		r.flushInterval != defaultFlushInterval ||
-		r.drainTimeout != defaultDrainTimeout ||
-		r.compression != defaultCompression {
+		r.drainTimeout != defaultDrainTimeout {
 		t.Fatalf("defaults not applied: %+v", r)
 	}
 	// Reporting is on by default, so an unconfigured client still has a
@@ -683,27 +682,6 @@ func TestResolveLogMode(t *testing.T) {
 				t.Fatalf("warning = %q, wantWarn %v", warning, tc.wantWarn)
 			}
 		})
-	}
-}
-
-func TestResolveCompressionFallsBack(t *testing.T) {
-	var logs bytes.Buffer
-	warn := makeWarn(slog.New(slog.NewTextHandler(&logs, nil)))
-
-	if got := resolveCompression("", warn); got != defaultCompression {
-		t.Fatalf("empty compression = %q, want %q", got, defaultCompression)
-	}
-	if got := resolveCompression(CompressionGzip, warn); got != CompressionGzip {
-		t.Fatalf("gzip = %q, want gzip", got)
-	}
-	if logs.Len() != 0 {
-		t.Fatalf("valid values must not warn: %s", logs.String())
-	}
-	if got := resolveCompression("brotli", warn); got != defaultCompression {
-		t.Fatalf("unknown codec = %q, want the default", got)
-	}
-	if !strings.Contains(logs.String(), "Compression") {
-		t.Fatalf("unknown codec must warn: %s", logs.String())
 	}
 }
 

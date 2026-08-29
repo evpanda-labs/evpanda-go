@@ -19,16 +19,6 @@ import (
 	"time"
 )
 
-// Compression selects the request body codec.
-type Compression string
-
-const (
-	// CompressionZstd is the default codec.
-	CompressionZstd Compression = "zstd"
-	// CompressionGzip is the opt-in alternative.
-	CompressionGzip Compression = "gzip"
-)
-
 // LogMode selects how much the SDK says for itself. The zero value means
 // "unset": the EVPANDA_LOG environment variable decides, and failing that
 // [LogModeErrors].
@@ -84,10 +74,6 @@ type BaseConfig struct {
 	// DrainTimeout is how long Close waits to drain buffered messages.
 	// Zero uses the default (10s); an explicit value must be ≥ 5s.
 	DrainTimeout time.Duration
-	// Compression is the request body codec. Empty uses the default
-	// ([CompressionZstd]).
-	Compression Compression
-
 	// LogMode selects how much the SDK logs. Empty consults the
 	// EVPANDA_LOG env var, then falls back to LogModeErrors — problems
 	// are reported by default, at a bounded rate.
@@ -122,7 +108,6 @@ type resolvedConfig struct {
 	maxCaptureBytes int
 	flushInterval   time.Duration
 	drainTimeout    time.Duration
-	compression     Compression
 	// allowedHeaders is the lowercased extra allowlist (OCPI only).
 	allowedHeaders []string
 	// logMode is the resolved verbosity; never the empty zero value.
@@ -140,7 +125,6 @@ const (
 	defaultMaxCaptureBytes = 64 * 1024
 	defaultFlushInterval   = 5 * time.Second
 	defaultDrainTimeout    = 10 * time.Second
-	defaultCompression     = CompressionZstd
 
 	// minMaxBufferBytes is one default-sized capture; below it the buffer
 	// could not hold even a single message.
@@ -279,21 +263,6 @@ func resolveBound[T int | time.Duration](value, fallback T, field string, minVal
 	return value
 }
 
-// resolveCompression: empty ⇒ the default; a value outside the two known
-// codecs falls back to the default with a warning.
-func resolveCompression(value Compression, warn warnFunc) Compression {
-	switch value {
-	case "":
-		return defaultCompression
-	case CompressionGzip, CompressionZstd:
-		return value
-	default:
-		warn("`Compression` must be %q or %q; using default %q",
-			CompressionGzip, CompressionZstd, defaultCompression)
-		return defaultCompression
-	}
-}
-
 // resolveAllowedHeaders trims, lowercases, and deduplicates (preserving
 // insertion order) the extra allowlist entries, skipping empties.
 func resolveAllowedHeaders(headers []string) []string {
@@ -340,7 +309,6 @@ func resolveBaseConfig(c BaseConfig, p protocol) (resolvedConfig, error) {
 		maxCaptureBytes: resolveBound(c.MaxCaptureBytes, defaultMaxCaptureBytes, "MaxCaptureBytes", 1, warn),
 		flushInterval:   resolveBound(c.FlushInterval, defaultFlushInterval, "FlushInterval", minFlushInterval, warn),
 		drainTimeout:    resolveBound(c.DrainTimeout, defaultDrainTimeout, "DrainTimeout", minDrainTimeout, warn),
-		compression:     resolveCompression(c.Compression, warn),
 		logMode:         logMode,
 		logger:          logger,
 	}

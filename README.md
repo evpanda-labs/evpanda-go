@@ -241,7 +241,6 @@ if err != nil {
 | `MaxCaptureBytes` | `64 KiB` | Per body / per frame cap; an oversize body drops the whole message |
 | `FlushInterval` | `5s` | Maximum time between deliveries |
 | `DrainTimeout` | `10s` | How long `Close` waits to drain (minimum `5s`) |
-| `Compression` | `zstd` | `CompressionZstd` or `CompressionGzip` |
 | `LogMode` | `errors` | `LogModeSilent`, `LogModeErrors`, `LogModeDebug` |
 | `Logger` | `slog.Default()` | Where the SDK's own logs go |
 | `OCPIAllowedHeaders` | — | *(OCPI only)* Extra headers to capture, on top of the defaults |

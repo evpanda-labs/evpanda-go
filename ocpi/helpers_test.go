@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
+
 	evpanda "github.com/evpanda-labs/evpanda-go"
 )
 
@@ -24,7 +26,8 @@ type received struct {
 }
 
 // mockUpstream stands in for the ingestion API and records what it was
-// sent. Compression is left off in these tests, so bodies arrive plain.
+// sent. It decodes zstd rather than assuming these payloads stay under
+// the SDK's compression floor, so a test that grows a body still works.
 type mockUpstream struct {
 	mu       sync.Mutex
 	server   *httptest.Server
@@ -34,7 +37,14 @@ type mockUpstream struct {
 func startMockUpstream() *mockUpstream {
 	m := &mockUpstream{}
 	m.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
+		var reader io.Reader = r.Body
+		if r.Header.Get("content-encoding") == "zstd" {
+			if zr, err := zstd.NewReader(r.Body); err == nil {
+				defer zr.Close()
+				reader = zr
+			}
+		}
+		raw, _ := io.ReadAll(reader)
 		var body struct {
 			Messages []map[string]any `json:"messages"`
 		}
