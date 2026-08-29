@@ -4,10 +4,12 @@ package evpanda
 // network-type field. Common fields live on [BaseConfig]; per-protocol
 // configs add only what that protocol's client cares about.
 //
-// Endpoint and APIKey are hard-required: a bad value fails Start* (which
-// hands back an inert client plus the error). Every other field is
-// tunable — a bad value falls back to its default and says so in the
-// host's logs, so a typo can never silence the SDK entirely.
+// APIKey is the one field with no usable default, so a missing key fails
+// Start* (which hands back an inert client plus the error). A malformed
+// Endpoint fails the same way — but an empty one is not malformed, it
+// just means production. Every other field is tunable: a bad value falls
+// back to its default and says so in the host's logs, so a typo can
+// never silence the SDK entirely.
 
 import (
 	"errors"
@@ -52,8 +54,9 @@ const logModeEnvVar = "EVPANDA_LOG"
 // Every field except Endpoint and APIKey falls back to a default when
 // left at its zero value.
 type BaseConfig struct {
-	// Endpoint is the ingestion API base, e.g. https://ingest.evpanda.io.
-	// Required.
+	// Endpoint is the ingestion API base. Empty uses the production
+	// default, https://ingest.evpanda.io; set it to reach a different
+	// environment. A non-empty value must be a valid http(s) URL.
 	Endpoint string
 	// APIKey is sent as the X-API-Key header. If empty, it falls back to
 	// the EVPANDA_API_KEY environment variable; one of the two must be set.
@@ -121,6 +124,11 @@ const (
 	// defaultMaxBufferBytes covers roughly one full retry window of a
 	// 10 000-charger CSMS (~400 msg/s at ~500 B) — enough to ride out a
 	// blip, small enough to sit inside an ordinary container limit.
+	// defaultEndpoint is the production ingestion API. A host that never
+	// sets Endpoint reaches it, which is what almost every host wants;
+	// staging deployments set the field.
+	defaultEndpoint = "https://ingest.evpanda.io"
+
 	defaultMaxBufferBytes  = 32 << 20 // 32 MiB
 	defaultMaxCaptureBytes = 64 * 1024
 	defaultFlushInterval   = 5 * time.Second
@@ -148,7 +156,8 @@ const (
 var (
 	// ErrConfig is wrapped by every configuration failure.
 	ErrConfig = errors.New("evpanda: invalid config")
-	// ErrEndpoint reports a missing or malformed Endpoint.
+	// ErrEndpoint reports a malformed Endpoint. An empty one is not an
+	// error — it selects the production default.
 	ErrEndpoint = fmt.Errorf("%w: endpoint", ErrConfig)
 	// ErrAPIKey reports that no API key was found in the config or the
 	// EVPANDA_API_KEY environment variable.
@@ -232,12 +241,13 @@ func resolveAPIKey(value string) (string, error) {
 	return "", fmt.Errorf("%w: set APIKey or the %s environment variable", ErrAPIKey, apiKeyEnvVar)
 }
 
-// resolveEndpoint requires a non-empty http(s) URL and trims trailing
-// slashes; the transport appends /v1/{protocol}.
+// resolveEndpoint defaults an empty value to production, and otherwise
+// requires a valid http(s) URL. Trailing slashes are trimmed; the
+// transport appends /v1/{protocol}.
 func resolveEndpoint(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
-		return "", fmt.Errorf("%w: required and must be a non-empty string", ErrEndpoint)
+		return defaultEndpoint, nil
 	}
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" {

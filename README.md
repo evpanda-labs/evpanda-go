@@ -38,7 +38,10 @@ Pick the client for the protocol your service speaks. `StartOCPI` and
 `StartOCPP` always return a usable client — if the config is bad you get an
 inert one plus an error, so a typo can't stop your service from booting.
 
-Set `EVPANDA_API_KEY` in the environment, or pass `APIKey` in the config.
+**The only thing you must supply is an API key.** Set `EVPANDA_API_KEY` in
+the environment, or pass `APIKey` in the config. `Endpoint` defaults to the
+production ingestion API, so leave it unset unless you're pointing at
+another environment.
 
 ### OCPP
 
@@ -46,9 +49,8 @@ Set `EVPANDA_API_KEY` in the environment, or pass `APIKey` in the config.
 carries the charger identity, so per-frame calls need neither.
 
 ```go
-panda, err := evpanda.StartOCPP(evpanda.OCPPConfig{
-	BaseConfig: evpanda.BaseConfig{Endpoint: "https://ingest.evpanda.io"},
-})
+// Endpoint defaults to production; APIKey comes from EVPANDA_API_KEY.
+panda, err := evpanda.StartOCPP(evpanda.OCPPConfig{})
 if err != nil {
 	log.Printf("evpanda: %v (running inert)", err)
 }
@@ -101,9 +103,8 @@ no field to get backwards.
 platform.
 
 ```go
-panda, err := evpanda.StartOCPI(evpanda.OCPIConfig{
-	BaseConfig: evpanda.BaseConfig{Endpoint: "https://ingest.evpanda.io"},
-})
+// Endpoint defaults to production; APIKey comes from EVPANDA_API_KEY.
+panda, err := evpanda.StartOCPI(evpanda.OCPIConfig{})
 if err != nil {
 	log.Printf("evpanda: %v (running inert)", err)
 }
@@ -214,14 +215,14 @@ neither. Call `id.Valid()` to check one yourself.
 
 ## Configuration
 
-`Endpoint` and `APIKey` are required; `APIKey` falls back to
-`$EVPANDA_API_KEY`. Everything else takes its default when left at the zero
-value, and an out-of-range value falls back to that default with a warning
-rather than failing.
+`APIKey` is the only required field; it falls back to `$EVPANDA_API_KEY`.
+Everything else takes its default when left at the zero value, and an
+out-of-range value falls back to that default with a warning rather than
+failing.
 
-Those two are the only things `Start*` can fail on, and the failure is
-matchable — useful because a missing key is usually a deployment problem
-while a bad endpoint is a code one:
+A missing key and a malformed `Endpoint` are the only things `Start*` can
+fail on, and both are matchable — useful because a missing key is usually a
+deployment problem while a bad endpoint is a code one:
 
 ```go
 panda, err := evpanda.StartOCPI(cfg)
@@ -235,8 +236,8 @@ if err != nil {
 
 | Field | Default | Description |
 |---|---|---|
-| `Endpoint` | — | Ingestion API base URL (`http(s)://…`) |
-| `APIKey` | `$EVPANDA_API_KEY` | Sent as `X-API-Key` |
+| `Endpoint` | `https://ingest.evpanda.io` | Ingestion API base URL. Set only to reach another environment |
+| `APIKey` | `$EVPANDA_API_KEY` | Sent as `X-API-Key`. **Required** |
 | `MaxBufferBytes` | `32 MiB` | Memory ceiling for undelivered captures; oldest are evicted past it |
 | `MaxCaptureBytes` | `64 KiB` | Per body / per frame cap; an oversize body drops the whole message |
 | `FlushInterval` | `5s` | Maximum time between deliveries |

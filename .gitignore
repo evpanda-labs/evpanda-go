@@ -35,3 +35,8 @@ go.work.sum
 # Local-only design log (kept out of the repo for now)
 PORTING_NOTES.md
 .DS_Store
+
+# Design notes live as a published artifact, not in the module — a 93 KB
+# HTML file was 29% of what every consumer downloaded. Kept here so it
+# stays editable beside the code it describes.
+docs/

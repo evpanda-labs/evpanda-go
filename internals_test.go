@@ -522,8 +522,8 @@ func TestResolveEndpoint(t *testing.T) {
 		{"trims surrounding space", "  https://ingest.example  ", "https://ingest.example", false},
 		{"keeps a base path", "https://host/api/", "https://host/api", false},
 		{"plain http is allowed", "http://localhost:8080", "http://localhost:8080", false},
-		{"empty", "", "", true},
-		{"blank", "   ", "", true},
+		{"empty defaults to production", "", defaultEndpoint, false},
+		{"blank defaults to production", "   ", defaultEndpoint, false},
 		{"no scheme", "ingest.example", "", true},
 		{"no host", "https://", "", true},
 		{"wrong scheme", "ftp://ingest.example", "", true},
@@ -696,7 +696,6 @@ func TestConfigErrorsAreMatchable(t *testing.T) {
 		cfg  BaseConfig
 		want error
 	}{
-		{"no endpoint", BaseConfig{APIKey: "k"}, ErrEndpoint},
 		{"malformed endpoint", BaseConfig{Endpoint: "not-a-url", APIKey: "k"}, ErrEndpoint},
 		{"wrong scheme", BaseConfig{Endpoint: "ftp://h", APIKey: "k"}, ErrEndpoint},
 		{"no api key anywhere", BaseConfig{Endpoint: "https://h"}, ErrAPIKey},
@@ -729,4 +728,29 @@ func TestConfigErrorsAreMatchable(t *testing.T) {
 		t.Fatalf("valid config returned %v", err)
 	}
 	_ = c.Close()
+}
+
+// An unset Endpoint means production, not a misconfiguration — a host
+// that only sets an API key must reach the real ingestion API.
+func TestEndpointDefaultsToProduction(t *testing.T) {
+	t.Setenv(logModeEnvVar, "")
+	r, err := resolveBaseConfig(BaseConfig{APIKey: "k"}, protocolOCPI)
+	if err != nil {
+		t.Fatalf("an unset Endpoint must not fail: %v", err)
+	}
+	if r.endpoint != defaultEndpoint {
+		t.Fatalf("endpoint = %q, want %q", r.endpoint, defaultEndpoint)
+	}
+	if !strings.HasPrefix(defaultEndpoint, "https://") {
+		t.Fatalf("the default must be https, got %q", defaultEndpoint)
+	}
+
+	// An explicit value still wins, and a malformed one still fails.
+	r, err = resolveBaseConfig(BaseConfig{Endpoint: "https://staging.example/", APIKey: "k"}, protocolOCPI)
+	if err != nil || r.endpoint != "https://staging.example" {
+		t.Fatalf("explicit endpoint = %q, %v", r.endpoint, err)
+	}
+	if _, err = resolveBaseConfig(BaseConfig{Endpoint: "nope", APIKey: "k"}, protocolOCPI); !errors.Is(err, ErrEndpoint) {
+		t.Fatalf("a malformed endpoint must still fail, got %v", err)
+	}
 }
