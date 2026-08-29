@@ -324,7 +324,7 @@ func TestRingBufferByteAccounting(t *testing.T) {
 // covers both protocols on the same terms.
 func TestOCPPMessageAccounting(t *testing.T) {
 	base := ocppMessage{
-		EventType:    OCPPEventTypeMessage,
+		EventType:    ocppEventTypeMessage,
 		Identity:     ChargerIdentity{ChargerID: "CP-001"},
 		ConnectionID: "5f2c1a9e",
 		Direction:    FromCP,
@@ -343,9 +343,9 @@ func TestOCPPMessageAccounting(t *testing.T) {
 // which is the whole reason the budget is bytes and not a slot count.
 func TestConnectEventIsCheaperThanAMessage(t *testing.T) {
 	id := ChargerIdentity{ChargerID: "CP-001"}
-	connect := ocppMessage{EventType: OCPPEventTypeConnect, Identity: id, ConnectionID: "c1"}
+	connect := ocppMessage{EventType: ocppEventTypeConnect, Identity: id, ConnectionID: "c1"}
 	message := ocppMessage{
-		EventType: OCPPEventTypeMessage, Identity: id, ConnectionID: "c1",
+		EventType: ocppEventTypeMessage, Identity: id, ConnectionID: "c1",
 		Direction: FromCP, Payload: make([]byte, 4096),
 	}
 	if connect.size() >= message.size() {

@@ -10,6 +10,7 @@ package evpanda
 // support conversation that cannot be answered.
 
 import (
+	"context"
 	"log/slog"
 	"sync/atomic"
 	"time"
@@ -222,7 +223,7 @@ func (w *worker) reportHealth() {
 // reportShutdown logs the client's lifetime totals as it closes. In
 // LogModeDebug it always logs; otherwise only when something was dropped,
 // so a clean run leaves no trace.
-func (w *worker) reportShutdown(drainErr error) {
+func (w *worker) reportShutdown(ctx context.Context, drainErr error) {
 	if w.cfg.logger == nil {
 		return
 	}
@@ -239,5 +240,5 @@ func (w *worker) reportShutdown(drainErr error) {
 	if total.TotalDropped() == 0 && drainErr == nil {
 		level = slog.LevelInfo
 	}
-	w.cfg.logger.Log(w.ctx, level, "evpanda: client closed", attrs...)
+	w.cfg.logger.Log(ctx, level, "evpanda: client closed", attrs...)
 }

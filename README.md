@@ -219,6 +219,20 @@ neither. Call `id.Valid()` to check one yourself.
 value, and an out-of-range value falls back to that default with a warning
 rather than failing.
 
+Those two are the only things `Start*` can fail on, and the failure is
+matchable — useful because a missing key is usually a deployment problem
+while a bad endpoint is a code one:
+
+```go
+panda, err := evpanda.StartOCPI(cfg)
+if errors.Is(err, evpanda.ErrAPIKey) {
+	log.Fatal("EVPANDA_API_KEY is not set in this environment")
+}
+if err != nil {
+	log.Printf("evpanda: %v (running inert)", err)
+}
+```
+
 | Field | Default | Description |
 |---|---|---|
 | `Endpoint` | — | Ingestion API base URL (`http(s)://…`) |
@@ -232,36 +246,7 @@ rather than failing.
 | `Logger` | `slog.Default()` | Where the SDK's own logs go |
 | `OCPIAllowedHeaders` | — | *(OCPI only)* Extra headers to capture, on top of the defaults |
 
-## Monitoring
-
-### Counters
-
-`Stats()` works on any client, always — including after `Close`. Each field
-points at one cause:
-
-```go
-s := panda.Stats()
-```
-
-| Field | What a high value means |
-|---|---|
-| `Captured` **= 0** | Capture isn't wired in |
-| `DroppedInvalid` | Identity resolution failing — with adapters, usually mounted before your auth layer |
-| `DroppedOversize` | Bodies exceed `MaxCaptureBytes` |
-| `DroppedEvicted` | Upstream can't keep up, or `MaxBufferBytes` is too small |
-| `DroppedUndeliverable` | Network, API key, or ingestion fault |
-| `DroppedPanic` | A bug in the SDK — please report it |
-
-Plus `BufferedMessages` and `BufferBytes` as live gauges. Wire them into
-whatever you already run:
-
-```go
-prometheus.MustRegister(prometheus.NewCounterFunc(opts, func() float64 {
-	return float64(panda.Stats().DroppedEvicted)
-}))
-```
-
-### Logging
+## Logging
 
 The SDK reports problems to your logger by default, at a bounded rate: at
 most one summary line per minute, and nothing at all while it's healthy.
@@ -297,29 +282,8 @@ buffered.
 long as the transport's retries take, so use it at shutdown or while
 debugging — not on a request path.
 
-## Delivery behaviour
-
-Captures are batched and delivered by one background goroutine: whenever
-1000 messages are waiting or `FlushInterval` elapses, whichever comes first.
-Failed deliveries are retried with exponential backoff and jitter; a batch
-that still can't be delivered is dropped, as are the oldest captures once the
-buffer is full. **Delivery is best-effort by design** — the SDK will always
-choose losing telemetry over slowing down your service.
-
 ## Documentation
 
 - [API reference on pkg.go.dev](https://pkg.go.dev/github.com/evpanda-labs/evpanda-go)
-- [Architecture and design notes](docs/design.html) — how it works, and why
-
-## Development
-
-```sh
-just lint   # gofmt + golangci-lint
-just vet
-just test   # go test -race -count=1 ./...
-just build
-```
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+- [Architecture and design notes](https://claude.ai/code/artifact/7ca90c40-e7f0-4dad-b833-74e82e86fa60)
+  — how it works, and why

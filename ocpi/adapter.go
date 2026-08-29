@@ -39,7 +39,7 @@ import (
 type Capturer interface {
 	CaptureInboundMessage(evpanda.OCPIMessageInput)
 	CaptureOutboundMessage(evpanda.OCPIMessageInput)
-	CaptureLimits() (maxCaptureBytes int, active bool)
+	Capturing() (maxCaptureBytes int, ok bool)
 }
 
 // Compile-time proof that the real client satisfies the seam, so widening
@@ -313,20 +313,20 @@ func (t *teeReadCloser) finish() {
 	t.once.Do(t.onDone)
 }
 
-// limitsOf asks the client what it can capture, tolerating a Capturer
+// capturing asks the client what it can capture, tolerating a Capturer
 // that misbehaves — a typed-nil client, or a third-party implementation
 // with a fault of its own. Either way the adapter falls back to "not
 // capturing", which is a pass-through rather than a broken host.
-func limitsOf(c Capturer) (maxCaptureBytes int, active bool) {
+func capturing(c Capturer) (maxCaptureBytes int, ok bool) {
 	if c == nil {
 		return 0, false
 	}
 	defer func() {
 		if recover() != nil {
-			maxCaptureBytes, active = 0, false
+			maxCaptureBytes, ok = 0, false
 		}
 	}()
-	return c.CaptureLimits()
+	return c.Capturing()
 }
 
 // guard runs fn under a recover, so a fault while assembling a capture

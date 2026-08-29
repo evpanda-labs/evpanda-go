@@ -7,6 +7,7 @@ package evpanda
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -32,8 +33,8 @@ func TestPrepareOCPIDrops(t *testing.T) {
 		msg  ocpiMessage
 		want dropReason
 	}{
-		{"valid", ocpiMessage{Direction: OCPIInbound, Identity: validRoaming()}, dropNone},
-		{"no identity", ocpiMessage{Direction: OCPIInbound}, dropInvalidIdentity},
+		{"valid", ocpiMessage{Direction: ocpiInbound, Identity: validRoaming()}, dropNone},
+		{"no identity", ocpiMessage{Direction: ocpiInbound}, dropInvalidIdentity},
 		{"missing platform name", ocpiMessage{
 			Identity: RoamingIdentity{PlatformID: "acme"},
 		}, dropInvalidIdentity},
@@ -79,26 +80,26 @@ func TestPrepareOCPPDrops(t *testing.T) {
 		msg  ocppMessage
 		want dropReason
 	}{
-		{"connect", ocppMessage{EventType: OCPPEventTypeConnect, Identity: valid}, dropNone},
-		{"disconnect", ocppMessage{EventType: OCPPEventTypeDisconnect, Identity: valid}, dropNone},
+		{"connect", ocppMessage{EventType: ocppEventTypeConnect, Identity: valid}, dropNone},
+		{"disconnect", ocppMessage{EventType: ocppEventTypeDisconnect, Identity: valid}, dropNone},
 		{"message", ocppMessage{
-			EventType: OCPPEventTypeMessage, Identity: valid,
+			EventType: ocppEventTypeMessage, Identity: valid,
 			Direction: FromCP, Payload: []byte("x"),
 		}, dropNone},
-		{"no identity", ocppMessage{EventType: OCPPEventTypeConnect}, dropInvalidIdentity},
+		{"no identity", ocppMessage{EventType: ocppEventTypeConnect}, dropInvalidIdentity},
 		{"half a tenant pair", ocppMessage{
-			EventType: OCPPEventTypeConnect,
+			EventType: ocppEventTypeConnect,
 			Identity:  ChargerIdentity{ChargerID: "CP-001", TenantID: "t1"},
 		}, dropInvalidIdentity},
 		// event_type 2 requires both direction and raw_frame on the wire.
 		{"message without a direction", ocppMessage{
-			EventType: OCPPEventTypeMessage, Identity: valid, Payload: []byte("x"),
+			EventType: ocppEventTypeMessage, Identity: valid, Payload: []byte("x"),
 		}, dropOversize},
 		{"message without a frame", ocppMessage{
-			EventType: OCPPEventTypeMessage, Identity: valid, Direction: FromCP,
+			EventType: ocppEventTypeMessage, Identity: valid, Direction: FromCP,
 		}, dropOversize},
 		{"oversize frame", ocppMessage{
-			EventType: OCPPEventTypeMessage, Identity: valid,
+			EventType: ocppEventTypeMessage, Identity: valid,
 			Direction: FromCP, Payload: make([]byte, 11),
 		}, dropOversize},
 	}
@@ -138,7 +139,7 @@ func TestPrepareRunsTheRedactor(t *testing.T) {
 func TestPrepareSkipsNilRedactor(t *testing.T) {
 	frame := []byte(`[2,"id","Heartbeat",{}]`)
 	env, reason := prepareOCPP(ocppMessage{
-		EventType: OCPPEventTypeMessage,
+		EventType: ocppEventTypeMessage,
 		Identity:  ChargerIdentity{ChargerID: "CP-001"},
 		Direction: FromCP,
 		Payload:   frame,
@@ -203,7 +204,7 @@ func TestChokepointTakesOwnership(t *testing.T) {
 
 	frame := []byte(`[2,"id","Heartbeat",{}]`)
 	env, _ = prepareOCPP(ocppMessage{
-		EventType: OCPPEventTypeMessage,
+		EventType: ocppEventTypeMessage,
 		Identity:  ChargerIdentity{ChargerID: "CP-001"},
 		Direction: FromCP, Payload: frame,
 	}, nil, 1024)
@@ -447,19 +448,19 @@ func TestReportHealthSilentMode(t *testing.T) {
 // only speaks up when something was lost.
 func TestReportShutdownByMode(t *testing.T) {
 	w, _, logs := reportWorker(t, LogModeDebug)
-	w.reportShutdown(nil)
+	w.reportShutdown(t.Context(), nil)
 	if !strings.Contains(logs.String(), "client closed") {
 		t.Fatalf("debug mode must log a clean close: %q", logs.String())
 	}
 
 	w, _, logs = reportWorker(t, LogModeErrors)
-	w.reportShutdown(nil)
+	w.reportShutdown(t.Context(), nil)
 	if logs.Len() != 0 {
 		t.Fatalf("default mode must close quietly when clean: %q", logs.String())
 	}
 
 	w, _, logs = reportWorker(t, LogModeErrors)
-	w.reportShutdown(ErrDrainIncomplete)
+	w.reportShutdown(t.Context(), ErrDrainIncomplete)
 	if !strings.Contains(logs.String(), "drain=") {
 		t.Fatalf("an incomplete drain must be reported: %q", logs.String())
 	}
@@ -593,7 +594,7 @@ func TestResolveBaseConfigDefaults(t *testing.T) {
 	r, err := resolveBaseConfig(BaseConfig{
 		Endpoint: "https://ingest.example",
 		APIKey:   "k",
-	}, ProtocolOCPI)
+	}, protocolOCPI)
 	if err != nil {
 		t.Fatalf("resolveBaseConfig: %v", err)
 	}
@@ -610,8 +611,8 @@ func TestResolveBaseConfigDefaults(t *testing.T) {
 		t.Fatalf("default logMode = %q, logger nil = %v; want errors with a logger",
 			r.logMode, r.logger == nil)
 	}
-	if r.protocol != ProtocolOCPI {
-		t.Fatalf("protocol = %q, want %q", r.protocol, ProtocolOCPI)
+	if r.protocol != protocolOCPI {
+		t.Fatalf("protocol = %q, want %q", r.protocol, protocolOCPI)
 	}
 }
 
@@ -626,7 +627,7 @@ func TestResolveWarnsWhenBufferSmallerThanCapture(t *testing.T) {
 		MaxBufferBytes:  64 << 10,
 		MaxCaptureBytes: 1 << 20,
 		Logger:          slog.New(slog.NewTextHandler(&logs, nil)),
-	}, ProtocolOCPI)
+	}, protocolOCPI)
 	if err != nil {
 		t.Fatalf("resolveBaseConfig: %v", err)
 	}
@@ -704,4 +705,50 @@ func TestResolveCompressionFallsBack(t *testing.T) {
 	if !strings.Contains(logs.String(), "Compression") {
 		t.Fatalf("unknown codec must warn: %s", logs.String())
 	}
+}
+
+// Config failures are matchable, so a caller can tell a deployment
+// problem (no API key reached the process) from a code problem (a
+// malformed endpoint) instead of only logging a string.
+func TestConfigErrorsAreMatchable(t *testing.T) {
+	t.Setenv(apiKeyEnvVar, "")
+
+	tests := []struct {
+		name string
+		cfg  BaseConfig
+		want error
+	}{
+		{"no endpoint", BaseConfig{APIKey: "k"}, ErrEndpoint},
+		{"malformed endpoint", BaseConfig{Endpoint: "not-a-url", APIKey: "k"}, ErrEndpoint},
+		{"wrong scheme", BaseConfig{Endpoint: "ftp://h", APIKey: "k"}, ErrEndpoint},
+		{"no api key anywhere", BaseConfig{Endpoint: "https://h"}, ErrAPIKey},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := StartOCPI(OCPIConfig{BaseConfig: tc.cfg})
+			if err == nil {
+				t.Fatal("expected a config error")
+			}
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("errors.Is(_, %v) = false for %v", tc.want, err)
+			}
+			// Every field error also matches the umbrella sentinel.
+			if !errors.Is(err, ErrConfig) {
+				t.Fatalf("every config failure must wrap ErrConfig: %v", err)
+			}
+			// The message keeps the detail, not just the sentinel text.
+			if len(err.Error()) <= len(ErrConfig.Error()) {
+				t.Fatalf("error lost its detail: %q", err)
+			}
+		})
+	}
+
+	// A good config produces no error at all.
+	c, err := StartOCPI(OCPIConfig{BaseConfig: BaseConfig{
+		Endpoint: "https://ingest.example", APIKey: "k", LogMode: LogModeSilent,
+	}})
+	if err != nil {
+		t.Fatalf("valid config returned %v", err)
+	}
+	_ = c.Close()
 }

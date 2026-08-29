@@ -93,16 +93,21 @@ func (c *client) Stats() Stats {
 	return c.stats.snapshot() // inert or closed: counters only, no buffer
 }
 
-// CaptureLimits reports the resolved per-body capture cap and whether the
-// client is currently capturing. It is false for an inert client (bad
-// config) or one that has been closed.
+// Capturing reports whether the client is currently capturing and, if so,
+// the per-body byte cap it is applying. It reports false for an inert
+// client (bad config) or one that has been closed.
 //
-// The shipped adapters use it to bound what they accumulate from a
-// streaming body and to skip instrumentation entirely when there is
-// nothing to capture into. It is exported for the same reason: writing an
-// adapter for a framework the SDK does not ship — fasthttp, or a gRPC
-// gateway — needs exactly these two facts.
-func (c *client) CaptureLimits() (maxCaptureBytes int, active bool) {
+//	if maxBytes, ok := panda.Capturing(); ok {
+//		// safe to instrument, and bound what you buffer at maxBytes
+//	}
+//
+// The two facts come back together deliberately: asked separately they
+// could straddle a Close and disagree. The shipped adapters use it to
+// bound what they accumulate from a streaming body and to skip
+// instrumentation entirely when there is nothing to capture into, and it
+// is exported so an adapter for a framework the SDK does not ship —
+// fasthttp, a gRPC gateway — has the same two facts.
+func (c *client) Capturing() (maxCaptureBytes int, ok bool) {
 	if w := c.current(); w != nil {
 		return w.cfg.maxCaptureBytes, true
 	}
@@ -245,19 +250,19 @@ func StartOCPI(cfg OCPIConfig) (*OCPIClient, error) {
 // for delivery. Non-blocking and never panics; a message with an invalid
 // identity or an oversize body is silently dropped.
 func (c *OCPIClient) CaptureInboundMessage(msg OCPIMessageInput) {
-	c.guardCapture("CaptureInboundMessage", func() { c.capture(msg, OCPIInbound) })
+	c.guardCapture("CaptureInboundMessage", func() { c.capture(msg, ocpiInbound) })
 }
 
 // CaptureOutboundMessage buffers an outbound OCPI message (host →
 // partner) for delivery. Non-blocking and never panics; a message with an
 // invalid identity or an oversize body is silently dropped.
 func (c *OCPIClient) CaptureOutboundMessage(msg OCPIMessageInput) {
-	c.guardCapture("CaptureOutboundMessage", func() { c.capture(msg, OCPIOutbound) })
+	c.guardCapture("CaptureOutboundMessage", func() { c.capture(msg, ocpiOutbound) })
 }
 
 // capture stamps the direction and hands the message to the worker, which
 // runs the validate → cap → redact chokepoint.
-func (c *OCPIClient) capture(msg OCPIMessageInput, direction OCPIDirection) {
+func (c *OCPIClient) capture(msg OCPIMessageInput, direction ocpiDirection) {
 	w := c.current()
 	if w == nil {
 		return
@@ -358,7 +363,7 @@ func (s *OCPPSession) Disconnect() {
 func (c *OCPPClient) CaptureConnect(msg OCPPMessageInput) {
 	c.guardCapture("CaptureConnect", func() {
 		c.capture(ocppMessage{
-			EventType:    OCPPEventTypeConnect,
+			EventType:    ocppEventTypeConnect,
 			Identity:     msg.Identity,
 			ConnectionID: msg.ConnectionID,
 		})
@@ -371,7 +376,7 @@ func (c *OCPPClient) CaptureConnect(msg OCPPMessageInput) {
 func (c *OCPPClient) CaptureMessage(msg OCPPMessageInput) {
 	c.guardCapture("CaptureMessage", func() {
 		c.capture(ocppMessage{
-			EventType:    OCPPEventTypeMessage,
+			EventType:    ocppEventTypeMessage,
 			Identity:     msg.Identity,
 			ConnectionID: msg.ConnectionID,
 			Direction:    msg.Direction,
@@ -385,7 +390,7 @@ func (c *OCPPClient) CaptureMessage(msg OCPPMessageInput) {
 func (c *OCPPClient) CaptureDisconnect(msg OCPPMessageInput) {
 	c.guardCapture("CaptureDisconnect", func() {
 		c.capture(ocppMessage{
-			EventType:    OCPPEventTypeDisconnect,
+			EventType:    ocppEventTypeDisconnect,
 			Identity:     msg.Identity,
 			ConnectionID: msg.ConnectionID,
 		})

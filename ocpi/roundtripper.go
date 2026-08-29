@@ -52,7 +52,7 @@ func RoundTripper(c Capturer, base http.RoundTripper, opts ...Option) http.Round
 	if c == nil {
 		return base
 	}
-	if _, active := limitsOf(c); !active {
+	if _, active := capturing(c); !active {
 		return base
 	}
 	return &ocpiRoundTripper{client: c, base: base, opts: newOptions(opts)}
@@ -72,7 +72,7 @@ func (t *ocpiRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	// reverts to an untouched transport rather than capturing into a
 	// no-op. The identity headers are still stripped, so a client that
 	// closes mid-flight doesn't suddenly start leaking them to partners.
-	maxBytes, active := limitsOf(t.client)
+	maxBytes, active := capturing(t.client)
 
 	outbound := req.Clone(req.Context())
 	for _, h := range identityHeaders {

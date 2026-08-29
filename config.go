@@ -10,6 +10,7 @@ package evpanda
 // host's logs, so a typo can never silence the SDK entirely.
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -116,7 +117,7 @@ type OCPPConfig struct {
 type resolvedConfig struct {
 	endpoint        string
 	apiKey          string
-	protocol        Protocol
+	protocol        protocol
 	maxBufferBytes  int
 	maxCaptureBytes int
 	flushInterval   time.Duration
@@ -146,6 +147,28 @@ const (
 	minMaxBufferBytes = 64 << 10 // 64 KiB
 	minFlushInterval  = time.Millisecond
 	minDrainTimeout   = 5 * time.Second
+)
+
+// Configuration failures returned by [StartOCPI] and [StartOCPP]. Every
+// one wraps ErrConfig, and the two field-specific sentinels wrap it in
+// turn, so a caller can match at whichever level it cares about:
+//
+//	if errors.Is(err, evpanda.ErrAPIKey) {
+//		// a deployment problem — the key never reached the process
+//	}
+//	if errors.Is(err, evpanda.ErrConfig) {
+//		// any configuration fault
+//	}
+//
+// Start* fails for no other reason, so these cover it.
+var (
+	// ErrConfig is wrapped by every configuration failure.
+	ErrConfig = errors.New("evpanda: invalid config")
+	// ErrEndpoint reports a missing or malformed Endpoint.
+	ErrEndpoint = fmt.Errorf("%w: endpoint", ErrConfig)
+	// ErrAPIKey reports that no API key was found in the config or the
+	// EVPANDA_API_KEY environment variable.
+	ErrAPIKey = fmt.Errorf("%w: api key", ErrConfig)
 )
 
 const errPrefix = "evpanda: config"
@@ -222,7 +245,7 @@ func resolveAPIKey(value string) (string, error) {
 	if v := strings.TrimSpace(os.Getenv(apiKeyEnvVar)); v != "" {
 		return v, nil
 	}
-	return "", fmt.Errorf("%s: `APIKey` is required — set APIKey or the %s env var", errPrefix, apiKeyEnvVar)
+	return "", fmt.Errorf("%w: set APIKey or the %s environment variable", ErrAPIKey, apiKeyEnvVar)
 }
 
 // resolveEndpoint requires a non-empty http(s) URL and trims trailing
@@ -230,14 +253,14 @@ func resolveAPIKey(value string) (string, error) {
 func resolveEndpoint(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
-		return "", fmt.Errorf("%s: `Endpoint` is required and must be a non-empty string", errPrefix)
+		return "", fmt.Errorf("%w: required and must be a non-empty string", ErrEndpoint)
 	}
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" {
-		return "", fmt.Errorf("%s: `Endpoint` must be a valid URL", errPrefix)
+		return "", fmt.Errorf("%w: %q is not a valid URL", ErrEndpoint, s)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("%s: `Endpoint` must use http or https", errPrefix)
+		return "", fmt.Errorf("%w: %q must use http or https", ErrEndpoint, s)
 	}
 	return strings.TrimRight(s, "/"), nil
 }
@@ -292,7 +315,7 @@ func resolveAllowedHeaders(headers []string) []string {
 
 // resolveBaseConfig applies defaults and validates the shared fields.
 // Only Endpoint and APIKey can fail.
-func resolveBaseConfig(c BaseConfig, p Protocol) (resolvedConfig, error) {
+func resolveBaseConfig(c BaseConfig, p protocol) (resolvedConfig, error) {
 	logMode, modeWarning := resolveLogMode(c.LogMode)
 	logger := effectiveLogger(c, logMode)
 	warn := makeWarn(logger)
@@ -333,7 +356,7 @@ func resolveBaseConfig(c BaseConfig, p Protocol) (resolvedConfig, error) {
 }
 
 func resolveOCPIConfig(c OCPIConfig) (resolvedConfig, error) {
-	r, err := resolveBaseConfig(c.BaseConfig, ProtocolOCPI)
+	r, err := resolveBaseConfig(c.BaseConfig, protocolOCPI)
 	if err != nil {
 		return r, err
 	}
@@ -342,5 +365,5 @@ func resolveOCPIConfig(c OCPIConfig) (resolvedConfig, error) {
 }
 
 func resolveOCPPConfig(c OCPPConfig) (resolvedConfig, error) {
-	return resolveBaseConfig(c.BaseConfig, ProtocolOCPP)
+	return resolveBaseConfig(c.BaseConfig, protocolOCPP)
 }

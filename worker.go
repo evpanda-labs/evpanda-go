@@ -57,9 +57,9 @@ type worker struct {
 	quit chan struct{}
 	done chan struct{}
 
-	// ctx bounds the loop's own deliveries; cancel aborts an in-flight
-	// POST when a shutdown deadline expires.
-	ctx    context.Context
+	// cancel aborts the loop's in-flight POST when a shutdown deadline
+	// expires. The context it belongs to is passed into loop rather than
+	// stored here — a struct is not where a Context belongs.
 	cancel context.CancelFunc
 
 	stopOnce  sync.Once
@@ -68,7 +68,6 @@ type worker struct {
 }
 
 func newWorker(b *ringBuffer, t *transport, c resolvedConfig, st *stats) *worker {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &worker{
 		buffer:    b,
 		transport: t,
@@ -78,17 +77,18 @@ func newWorker(b *ringBuffer, t *transport, c resolvedConfig, st *stats) *worker
 		flushReq:  make(chan chan struct{}),
 		quit:      make(chan struct{}),
 		done:      make(chan struct{}),
-		ctx:       ctx,
-		cancel:    cancel,
 	}
 }
 
-// start launches the loop goroutine.
+// start launches the loop goroutine, handing it the context that bounds
+// its deliveries and keeping only the cancel func to stop them.
 func (w *worker) start() {
-	go w.loop()
+	ctx, cancel := context.WithCancel(context.Background())
+	w.cancel = cancel
+	go w.loop(ctx)
 }
 
-func (w *worker) loop() {
+func (w *worker) loop(ctx context.Context) {
 	defer close(w.done)
 	// The SDK's only goroutine, and the host does not own it — an
 	// unrecovered panic here would take their process down with it, which
@@ -117,7 +117,7 @@ func (w *worker) loop() {
 	// is empty afterwards, so a tick that was already pending would be a
 	// no-op. (Go 1.23+ makes Stop-then-Reset safe without draining.)
 	flush := func() {
-		w.flush(w.ctx)
+		w.flush(ctx)
 		timer.Stop()
 		timer.Reset(w.cfg.flushInterval)
 	}
@@ -205,12 +205,12 @@ func (w *worker) shutdown(ctx context.Context) (err error) {
 	// Named return so the summary reports the drain outcome. It runs
 	// before the two defers above, while ctx and the transport are still
 	// live.
-	defer func() { w.reportShutdown(err) }()
+	defer func() { w.reportShutdown(ctx, err) }()
 
 	w.stopOnce.Do(func() { close(w.quit) })
 
 	// Wait for the loop to return, which also waits out a flush it has in
-	// flight. Past the deadline, cancelling w.ctx aborts that POST so the
+	// flight. Past the deadline, cancelling the loop aborts that POST so the
 	// goroutine cannot outlive this call.
 	select {
 	case <-w.done:
@@ -282,7 +282,7 @@ func prepareOCPP(msg ocppMessage, redact ocppRedactor, maxCaptureBytes int) (buf
 	if len(msg.Payload) > maxCaptureBytes {
 		return bufferedMessage{}, dropOversize
 	}
-	if msg.EventType == OCPPEventTypeMessage && (len(msg.Payload) == 0 || msg.Direction == "") {
+	if msg.EventType == ocppEventTypeMessage && (len(msg.Payload) == 0 || msg.Direction == "") {
 		return bufferedMessage{}, dropOversize
 	}
 	msg.Payload = cloneBody(msg.Payload) // same ownership transfer as OCPI

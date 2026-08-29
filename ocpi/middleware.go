@@ -49,7 +49,7 @@ func Middleware(c Capturer, opts ...Option) func(http.Handler) http.Handler {
 		if c == nil {
 			return next
 		}
-		if _, active := limitsOf(c); !active {
+		if _, active := capturing(c); !active {
 			return next
 		}
 
@@ -57,7 +57,7 @@ func Middleware(c Capturer, opts ...Option) func(http.Handler) http.Handler {
 			// Re-checked per request: Close drops the worker, and a
 			// closed client must stop doing capture work rather than
 			// record into a no-op.
-			maxBytes, active := limitsOf(c)
+			maxBytes, active := capturing(c)
 			if !active {
 				next.ServeHTTP(w, r)
 				return

@@ -6,29 +6,29 @@ import (
 )
 
 // Message types. These must match apispec/ingestion-api.yaml.
-// Protocol and the capture timestamp are SDK-owned (they live on the
+// protocol and the capture timestamp are SDK-owned (they live on the
 // internal envelope, see buffer.go) — deliberately not on these.
 
-// Protocol routes a batch to POST /v1/{protocol} on the ingestion API.
+// protocol routes a batch to POST /v1/{protocol} on the ingestion API.
 // One client serves exactly one protocol.
-type Protocol string
+type protocol string
 
 const (
-	// ProtocolOCPI is the OCPI ingestion route.
-	ProtocolOCPI Protocol = "ocpi"
-	// ProtocolOCPP is the OCPP ingestion route.
-	ProtocolOCPP Protocol = "ocpp"
+	// protocolOCPI is the OCPI ingestion route.
+	protocolOCPI protocol = "ocpi"
+	// protocolOCPP is the OCPP ingestion route.
+	protocolOCPP protocol = "ocpp"
 )
 
-// OCPIDirection is an OCPI message's direction relative to the host.
+// ocpiDirection is an OCPI message's direction relative to the host.
 // The values are the exact wire strings the ingestion API validates.
-type OCPIDirection string
+type ocpiDirection string
 
 const (
-	// OCPIInbound is traffic received by the host (partner → host).
-	OCPIInbound OCPIDirection = "IN"
-	// OCPIOutbound is traffic sent by the host (host → partner).
-	OCPIOutbound OCPIDirection = "OUT"
+	// ocpiInbound is traffic received by the host (partner → host).
+	ocpiInbound ocpiDirection = "IN"
+	// ocpiOutbound is traffic sent by the host (host → partner).
+	ocpiOutbound ocpiDirection = "OUT"
 )
 
 // OCPPDirection is an OCPP frame's direction relative to the charge point.
@@ -42,17 +42,17 @@ const (
 	FromCP OCPPDirection = "FROM_CP"
 )
 
-// OCPPEventType is an OCPP WebSocket lifecycle event, mapped onto the
+// ocppEventType is an OCPP WebSocket lifecycle event, mapped onto the
 // ingestion API's event_type.
-type OCPPEventType int
+type ocppEventType int
 
 const (
-	// OCPPEventTypeDisconnect indicates the WebSocket closed.
-	OCPPEventTypeDisconnect OCPPEventType = 0
-	// OCPPEventTypeConnect indicates the WebSocket was established.
-	OCPPEventTypeConnect OCPPEventType = 1
-	// OCPPEventTypeMessage indicates a message frame.
-	OCPPEventTypeMessage OCPPEventType = 2
+	// ocppEventTypeDisconnect indicates the WebSocket closed.
+	ocppEventTypeDisconnect ocppEventType = 0
+	// ocppEventTypeConnect indicates the WebSocket was established.
+	ocppEventTypeConnect ocppEventType = 1
+	// ocppEventTypeMessage indicates a message frame.
+	ocppEventTypeMessage ocppEventType = 2
 )
 
 // HTTPExchange is a captured HTTP request/response pair. Bodies are raw
@@ -150,7 +150,7 @@ type OCPPMessageInput struct {
 // ocpiMessage is the internal buffered form of an OCPI capture: the input
 // plus the direction the capture method stamped.
 type ocpiMessage struct {
-	Direction OCPIDirection
+	Direction ocpiDirection
 	Identity  RoamingIdentity
 	Data      HTTPExchange
 }
@@ -158,7 +158,7 @@ type ocpiMessage struct {
 // ocppMessage is the internal buffered form of an OCPP capture. Direction
 // is empty for connect and disconnect events.
 type ocppMessage struct {
-	EventType    OCPPEventType
+	EventType    ocppEventType
 	Identity     ChargerIdentity
 	ConnectionID string
 	Direction    OCPPDirection

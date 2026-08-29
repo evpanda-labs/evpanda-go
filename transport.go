@@ -211,12 +211,12 @@ type apiClient struct {
 
 // post issues one POST /v1/{protocol}, drains the response, and returns
 // the status code.
-func (c *apiClient) post(ctx context.Context, protocol Protocol, body []byte, encoding contentEncoding) (int, error) {
+func (c *apiClient) post(ctx context.Context, p protocol, body []byte, encoding contentEncoding) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.endpoint+"/v1/"+string(protocol), bytes.NewReader(body))
+		c.endpoint+"/v1/"+string(p), bytes.NewReader(body))
 	if err != nil {
 		return 0, err
 	}
@@ -301,13 +301,13 @@ func (t *transport) compress(raw []byte) ([]byte, contentEncoding) {
 // 200 or 400/401/413 is terminal; 5xx and network errors back off and
 // retry. A batch that can't be delivered is dropped — loss is acceptable
 // by design, and the alternative is unbounded memory in the host.
-func (t *transport) send(ctx context.Context, protocol Protocol, batch []bufferedMessage) {
+func (t *transport) send(ctx context.Context, p protocol, batch []bufferedMessage) {
 	if len(batch) == 0 {
 		return
 	}
 	raw, err := serialize(batch)
 	if err != nil {
-		t.logDrop(protocol, len(batch), "batch could not be serialized")
+		t.logDrop(p, len(batch), "batch could not be serialized")
 		return
 	}
 	body, encoding := t.compress(raw)
@@ -318,12 +318,12 @@ func (t *transport) send(ctx context.Context, protocol Protocol, batch []buffere
 			select {
 			case <-time.After(nextDelay(attempt)):
 			case <-ctx.Done():
-				t.logDrop(protocol, len(batch), "context cancelled before retry")
+				t.logDrop(p, len(batch), "context cancelled before retry")
 				return
 			}
 		}
 
-		status, err := t.client.post(ctx, protocol, body, encoding)
+		status, err := t.client.post(ctx, p, body, encoding)
 		if err != nil {
 			lastStatus = 0
 			continue // network error or timeout: retryable
@@ -337,14 +337,14 @@ func (t *transport) send(ctx context.Context, protocol Protocol, batch []buffere
 			return
 		case http.StatusBadRequest, http.StatusUnauthorized,
 			http.StatusRequestEntityTooLarge:
-			t.logDrop(protocol, len(batch), fmt.Sprintf("permanent rejection: HTTP %d", status))
+			t.logDrop(p, len(batch), fmt.Sprintf("permanent rejection: HTTP %d", status))
 			return
 		}
 	}
 	if lastStatus != 0 {
-		t.logDrop(protocol, len(batch), fmt.Sprintf("retries exhausted (last HTTP %d)", lastStatus))
+		t.logDrop(p, len(batch), fmt.Sprintf("retries exhausted (last HTTP %d)", lastStatus))
 	} else {
-		t.logDrop(protocol, len(batch), "retries exhausted (network error / timeout)")
+		t.logDrop(p, len(batch), "retries exhausted (network error / timeout)")
 	}
 }
 
@@ -353,13 +353,13 @@ func (t *transport) send(ctx context.Context, protocol Protocol, batch []buffere
 // line reports the same loss with bounded volume — an outage would
 // otherwise emit a line every flush interval, for as long as it lasts,
 // across every client at once.
-func (t *transport) logDrop(protocol Protocol, n int, reason string) {
+func (t *transport) logDrop(p protocol, n int, reason string) {
 	t.stats.countDrop(dropUndeliverable, n)
 	if t.logger == nil || t.logMode != LogModeDebug {
 		return
 	}
 	t.logger.Warn("evpanda: dropped batch (delivery failed)",
-		"protocol", string(protocol),
+		"protocol", string(p),
 		"messages", n,
 		"reason", reason,
 	)
