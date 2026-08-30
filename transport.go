@@ -110,8 +110,8 @@ type ocppIngest struct {
 func (m ocpiMessage) record(capturedAt string) any {
 	return ocpiIngest{
 		CapturedAt:         capturedAt,
-		PlatformID:         m.Identity.PlatformID,
-		PlatformName:       m.Identity.PlatformName,
+		PlatformID:         m.Identity.ID,
+		PlatformName:       m.Identity.Name,
 		TenantID:           optStr(m.Identity.TenantID),
 		TenantName:         optStr(m.Identity.TenantName),
 		Direction:          string(m.Direction),
@@ -129,7 +129,7 @@ func (m ocpiMessage) record(capturedAt string) any {
 // message implementation for ocppMessage.
 func (m ocppMessage) record(capturedAt string) any {
 	return ocppIngest{
-		ChargerID:    m.Identity.ChargerID,
+		ChargerID:    m.Identity.ID,
 		ConnectionID: m.ConnectionID,
 		TenantID:     optStr(m.Identity.TenantID),
 		TenantName:   optStr(m.Identity.TenantName),

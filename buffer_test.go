@@ -325,7 +325,7 @@ func TestRingBufferByteAccounting(t *testing.T) {
 func TestOCPPMessageAccounting(t *testing.T) {
 	base := ocppMessage{
 		EventType:    ocppEventTypeMessage,
-		Identity:     ChargerIdentity{ChargerID: "CP-001"},
+		Identity:     Charger{ID: "CP-001"},
 		ConnectionID: "5f2c1a9e",
 		Direction:    FromCP,
 	}
@@ -342,7 +342,7 @@ func TestOCPPMessageAccounting(t *testing.T) {
 // A connect event carries no frame, so it costs far less than a message —
 // which is the whole reason the budget is bytes and not a slot count.
 func TestConnectEventIsCheaperThanAMessage(t *testing.T) {
-	id := ChargerIdentity{ChargerID: "CP-001"}
+	id := Charger{ID: "CP-001"}
 	connect := ocppMessage{EventType: ocppEventTypeConnect, Identity: id, ConnectionID: "c1"}
 	message := ocppMessage{
 		EventType: ocppEventTypeMessage, Identity: id, ConnectionID: "c1",

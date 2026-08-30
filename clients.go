@@ -288,7 +288,7 @@ func (c *OCPIClient) capture(msg OCPIMessageInput, direction ocpiDirection) {
 //     [OCPPClient.CaptureDisconnect] — the flat primitives the session is
 //     built on, for one-off capture.
 //
-// Identity is a [ChargerIdentity] value, not a resolver: OCPP identity is
+// Identity is a [Charger] value, not a resolver: OCPP identity is
 // known at connect time. An invalid one drops the message.
 type OCPPClient struct {
 	client
@@ -329,12 +329,12 @@ type OCPPSession struct {
 	ConnectionID string
 
 	client   *OCPPClient
-	identity ChargerIdentity
+	identity Charger
 }
 
 // Connection opens a capture session for one OCPP connection: it mints a
 // connection ID, records the connect, and returns an [OCPPSession].
-func (c *OCPPClient) Connection(identity ChargerIdentity) *OCPPSession {
+func (c *OCPPClient) Connection(identity Charger) *OCPPSession {
 	connectionID := newUUID()
 	c.CaptureConnect(OCPPMessageInput{Identity: identity, ConnectionID: connectionID})
 	return &OCPPSession{ConnectionID: connectionID, client: c, identity: identity}

@@ -20,8 +20,8 @@ import (
 // must land in the counter that names its cause, since that mapping is
 // what makes Stats() diagnostic.
 
-func validRoaming() RoamingIdentity {
-	return RoamingIdentity{PlatformID: "acme", PlatformName: "Acme"}
+func validRoaming() Platform {
+	return Platform{ID: "acme", Name: "Acme"}
 }
 
 func passthroughOCPI(m ocpiMessage) ocpiMessage { return m }
@@ -36,14 +36,14 @@ func TestPrepareOCPIDrops(t *testing.T) {
 		{"valid", ocpiMessage{Direction: ocpiInbound, Identity: validRoaming()}, dropNone},
 		{"no identity", ocpiMessage{Direction: ocpiInbound}, dropInvalidIdentity},
 		{"missing platform name", ocpiMessage{
-			Identity: RoamingIdentity{PlatformID: "acme"},
+			Identity: Platform{ID: "acme"},
 		}, dropInvalidIdentity},
 		{"half a tenant pair", ocpiMessage{
-			Identity: RoamingIdentity{PlatformID: "acme", PlatformName: "Acme", TenantID: "t1"},
+			Identity: Platform{ID: "acme", Name: "Acme", TenantID: "t1"},
 		}, dropInvalidIdentity},
 		{"whole tenant pair", ocpiMessage{
-			Identity: RoamingIdentity{
-				PlatformID: "acme", PlatformName: "Acme",
+			Identity: Platform{
+				ID: "acme", Name: "Acme",
 				TenantID: "t1", TenantName: "Tenant One",
 			},
 		}, dropNone},
@@ -74,7 +74,7 @@ func TestPrepareOCPIDrops(t *testing.T) {
 }
 
 func TestPrepareOCPPDrops(t *testing.T) {
-	valid := ChargerIdentity{ChargerID: "CP-001"}
+	valid := Charger{ID: "CP-001"}
 	tests := []struct {
 		name string
 		msg  ocppMessage
@@ -89,7 +89,7 @@ func TestPrepareOCPPDrops(t *testing.T) {
 		{"no identity", ocppMessage{EventType: ocppEventTypeConnect}, dropInvalidIdentity},
 		{"half a tenant pair", ocppMessage{
 			EventType: ocppEventTypeConnect,
-			Identity:  ChargerIdentity{ChargerID: "CP-001", TenantID: "t1"},
+			Identity:  Charger{ID: "CP-001", TenantID: "t1"},
 		}, dropInvalidIdentity},
 		// event_type 2 requires both direction and raw_frame on the wire.
 		{"message without a direction", ocppMessage{
@@ -140,7 +140,7 @@ func TestPrepareSkipsNilRedactor(t *testing.T) {
 	frame := []byte(`[2,"id","Heartbeat",{}]`)
 	env, reason := prepareOCPP(ocppMessage{
 		EventType: ocppEventTypeMessage,
-		Identity:  ChargerIdentity{ChargerID: "CP-001"},
+		Identity:  Charger{ID: "CP-001"},
 		Direction: FromCP,
 		Payload:   frame,
 	}, nil, 1024)
@@ -205,7 +205,7 @@ func TestChokepointTakesOwnership(t *testing.T) {
 	frame := []byte(`[2,"id","Heartbeat",{}]`)
 	env, _ = prepareOCPP(ocppMessage{
 		EventType: ocppEventTypeMessage,
-		Identity:  ChargerIdentity{ChargerID: "CP-001"},
+		Identity:  Charger{ID: "CP-001"},
 		Direction: FromCP, Payload: frame,
 	}, nil, 1024)
 	copy(frame, bytes.Repeat([]byte("X"), len(frame)))

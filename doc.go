@@ -30,7 +30,7 @@
 // [OCPPClient.Connection]: it mints the connection ID and carries the
 // identity, so per-frame calls carry neither.
 //
-//	sess := panda.Connection(evpanda.ChargerIdentity{ChargerID: "CP-001"})
+//	sess := panda.Connection(evpanda.Charger{ID: "CP-001"})
 //	sess.Message(frame, evpanda.FromCP)
 //	sess.Disconnect()
 //

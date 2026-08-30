@@ -20,9 +20,9 @@ import (
 	"github.com/evpanda-labs/evpanda-go/ocpi"
 )
 
-var testIdentity = evpanda.RoamingIdentity{
-	PlatformID:   "acme",
-	PlatformName: "Acme Mobility",
+var testIdentity = evpanda.Platform{
+	ID:   "acme",
+	Name: "Acme Mobility",
 }
 
 // startOCPI builds a live client pointed at the ingestion mock.
@@ -74,11 +74,11 @@ func TestMiddlewareResolvesIdentityFromContext(t *testing.T) {
 
 	auth := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := ocpi.ContextWithIdentity(r.Context(), evpanda.RoamingIdentity{
-				PlatformID:   "acme",
-				PlatformName: "Acme Mobility",
-				TenantID:     "t1",
-				TenantName:   "Tenant One",
+			ctx := ocpi.ContextWithIdentity(r.Context(), evpanda.Platform{
+				ID:         "acme",
+				Name:       "Acme Mobility",
+				TenantID:   "t1",
+				TenantName: "Tenant One",
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -220,13 +220,13 @@ func TestMiddlewareCustomResolver(t *testing.T) {
 	defer mock.close()
 	panda := startOCPI(t, mock)
 
-	byPath := func(r *http.Request) (evpanda.RoamingIdentity, bool) {
+	byPath := func(r *http.Request) (evpanda.Platform, bool) {
 		id, ok := strings.CutPrefix(r.URL.Path, "/partners/")
 		if !ok {
-			return evpanda.RoamingIdentity{}, false
+			return evpanda.Platform{}, false
 		}
 		name, _, _ := strings.Cut(id, "/")
-		return evpanda.RoamingIdentity{PlatformID: name, PlatformName: name}, true
+		return evpanda.Platform{ID: name, Name: name}, true
 	}
 
 	srv := httptest.NewServer(ocpi.Middleware(panda, ocpi.WithResolver(byPath))(echoHandler))
@@ -250,7 +250,7 @@ func TestMiddlewareSurvivesAPanickingResolver(t *testing.T) {
 	defer mock.close()
 	panda := startOCPI(t, mock)
 
-	boom := func(*http.Request) (evpanda.RoamingIdentity, bool) { panic("resolver blew up") }
+	boom := func(*http.Request) (evpanda.Platform, bool) { panic("resolver blew up") }
 	srv := httptest.NewServer(ocpi.Middleware(panda, ocpi.WithResolver(boom))(echoHandler))
 	defer srv.Close()
 
@@ -377,11 +377,11 @@ func TestRoundTripperResolvesIdentityFromContext(t *testing.T) {
 
 	client := &http.Client{Transport: ocpi.RoundTripper(panda, nil)}
 
-	ctx := ocpi.ContextWithIdentity(context.Background(), evpanda.RoamingIdentity{
-		PlatformID:   "acme",
-		PlatformName: "Acme Mobility",
-		TenantID:     "t1",
-		TenantName:   "Tenant One",
+	ctx := ocpi.ContextWithIdentity(context.Background(), evpanda.Platform{
+		ID:         "acme",
+		Name:       "Acme Mobility",
+		TenantID:   "t1",
+		TenantName: "Tenant One",
 	})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
 		partner.server.URL+"/ocpi/2.2/sessions", strings.NewReader(`{"id":"s1"}`))
@@ -575,7 +575,7 @@ func TestRoamingIdentityContextRoundTrip(t *testing.T) {
 
 	// The most recent value wins, so a nested layer can refine what an
 	// outer one resolved.
-	inner := evpanda.RoamingIdentity{PlatformID: "nova", PlatformName: "Nova"}
+	inner := evpanda.Platform{ID: "nova", Name: "Nova"}
 	got, _ = ocpi.IdentityFromContext(ocpi.ContextWithIdentity(ctx, inner))
 	if got != inner {
 		t.Fatalf("nested value = %v, want %v", got, inner)

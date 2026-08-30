@@ -121,7 +121,7 @@ data.SetRequestBody(reqBytes)   // copies — reuse your buffer right after
 data.SetResponseBody(respBytes)
 
 panda.CaptureInboundMessage(evpanda.OCPIMessageInput{
-	Identity: evpanda.RoamingIdentity{PlatformID: "acme", PlatformName: "Acme Mobility"},
+	Identity: evpanda.Platform{ID: "acme", Name: "Acme Mobility"},
 	Data:     data,
 })
 ```
@@ -160,9 +160,9 @@ func auth(next http.Handler) http.Handler {
 			http.Error(w, "unknown partner", http.StatusUnauthorized)
 			return
 		}
-		ctx := ocpi.ContextWithIdentity(r.Context(), evpanda.RoamingIdentity{
-			PlatformID:   partner.ID,
-			PlatformName: partner.Name,
+		ctx := ocpi.ContextWithIdentity(r.Context(), evpanda.Platform{
+			ID:   partner.ID,
+			Name: partner.Name,
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -172,8 +172,8 @@ func auth(next http.Handler) http.Handler {
 Outbound, stamp it on the request you're about to send:
 
 ```go
-ctx = ocpi.ContextWithIdentity(ctx, evpanda.RoamingIdentity{
-	PlatformID: partner.ID, PlatformName: partner.Name,
+ctx = ocpi.ContextWithIdentity(ctx, evpanda.Platform{
+	ID: partner.ID, Name: partner.Name,
 })
 req, _ := http.NewRequestWithContext(ctx, http.MethodPost, partner.URL, body)
 req.Header.Set("Authorization", "Token "+partner.TokenB)
@@ -185,12 +185,12 @@ them. If identity lives somewhere else entirely — a client certificate, a
 path prefix — pass your own resolver:
 
 ```go
-byPath := func(r *http.Request) (evpanda.RoamingIdentity, bool) {
+byPath := func(r *http.Request) (evpanda.Platform, bool) {
 	name, ok := strings.CutPrefix(r.URL.Path, "/partners/")
 	if !ok {
-		return evpanda.RoamingIdentity{}, false // not captured
+		return evpanda.Platform{}, false // not captured
 	}
-	return evpanda.RoamingIdentity{PlatformID: name, PlatformName: name}, true
+	return evpanda.Platform{ID: name, Name: name}, true
 }
 
 ocpi.Middleware(panda, ocpi.WithResolver(byPath))
@@ -207,11 +207,13 @@ dropped rather than shipped as orphans.
 
 | Protocol | Type | Required fields |
 |---|---|---|
-| OCPI | `RoamingIdentity` | `PlatformID`, `PlatformName` |
-| OCPP | `ChargerIdentity` | `ChargerID` |
+| OCPI | `Platform` | `ID`, `Name` |
+| OCPP | `Charger` | `ID` |
 
 `TenantID` and `TenantName` are optional but **all-or-nothing** — set both or
-neither. Call `id.Valid()` to check one yourself.
+neither. They keep their prefix because they describe a different subject:
+which of *your* tenants an exchange belongs to, not a property of the partner
+or charger. Call `id.Valid()` to check one yourself.
 
 ## Configuration
 

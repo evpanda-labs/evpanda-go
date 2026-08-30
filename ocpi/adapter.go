@@ -50,13 +50,13 @@ var _ Capturer = (*evpanda.OCPIClient)(nil)
 // case-insensitive: net/http canonicalizes header keys, and the
 // equivalent Node SDK lowercases them.
 const (
-	// HeaderPlatformID carries RoamingIdentity.PlatformID.
+	// HeaderPlatformID carries Platform.ID.
 	HeaderPlatformID = "X-EVPanda-Platform-Id"
-	// HeaderPlatformName carries RoamingIdentity.PlatformName.
+	// HeaderPlatformName carries Platform.Name.
 	HeaderPlatformName = "X-EVPanda-Platform-Name"
-	// HeaderTenantID carries RoamingIdentity.TenantID.
+	// HeaderTenantID carries Platform.TenantID.
 	HeaderTenantID = "X-EVPanda-Tenant-Id"
-	// HeaderTenantName carries RoamingIdentity.TenantName.
+	// HeaderTenantName carries Platform.TenantName.
 	HeaderTenantName = "X-EVPanda-Tenant-Name"
 )
 
@@ -87,9 +87,9 @@ type identityKey struct{}
 //		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 //			partner, ok := lookupPartner(r.Header.Get("Authorization"))
 //			if ok {
-//				ctx := ContextWithIdentity(r.Context(), evpanda.RoamingIdentity{
-//					PlatformID:   partner.ID,
-//					PlatformName: partner.Name,
+//				ctx := ContextWithIdentity(r.Context(), evpanda.Platform{
+//					ID:   partner.ID,
+//					Name: partner.Name,
 //				})
 //				r = r.WithContext(ctx)
 //			}
@@ -101,7 +101,7 @@ type identityKey struct{}
 //
 //	ctx := ContextWithIdentity(ctx, partnerIdentity)
 //	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, partner.URL, nil)
-func ContextWithIdentity(ctx context.Context, id evpanda.RoamingIdentity) context.Context {
+func ContextWithIdentity(ctx context.Context, id evpanda.Platform) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -112,11 +112,11 @@ func ContextWithIdentity(ctx context.Context, id evpanda.RoamingIdentity) contex
 // [ContextWithIdentity] and reports whether one was present. The
 // identity is returned as stored — it is not validated here, so a caller
 // can inspect a partial value.
-func IdentityFromContext(ctx context.Context) (evpanda.RoamingIdentity, bool) {
+func IdentityFromContext(ctx context.Context) (evpanda.Platform, bool) {
 	if ctx == nil {
-		return evpanda.RoamingIdentity{}, false
+		return evpanda.Platform{}, false
 	}
-	id, ok := ctx.Value(identityKey{}).(evpanda.RoamingIdentity)
+	id, ok := ctx.Value(identityKey{}).(evpanda.Platform)
 	return id, ok
 }
 
@@ -130,7 +130,7 @@ func IdentityFromContext(ctx context.Context) (evpanda.RoamingIdentity, bool) {
 // The whole request is passed so a resolver can read the context, the
 // headers, the method or the URL. Adapters call it exactly once per
 // request, before the handler or the transport runs.
-type Resolver func(r *http.Request) (evpanda.RoamingIdentity, bool)
+type Resolver func(r *http.Request) (evpanda.Platform, bool)
 
 // DefaultResolver is what both adapters use when no resolver is
 // configured. It reads the identity from the request context first (see
@@ -140,21 +140,21 @@ type Resolver func(r *http.Request) (evpanda.RoamingIdentity, bool)
 // A request carrying neither is simply not captured — no error, no
 // partial record. Tenant stays all-or-nothing: set both tenant values or
 // neither, since a half-set pair fails validation and drops the message.
-func DefaultResolver(r *http.Request) (evpanda.RoamingIdentity, bool) {
+func DefaultResolver(r *http.Request) (evpanda.Platform, bool) {
 	if r == nil {
-		return evpanda.RoamingIdentity{}, false
+		return evpanda.Platform{}, false
 	}
 	if id, ok := IdentityFromContext(r.Context()); ok {
 		return id, true
 	}
-	id := evpanda.RoamingIdentity{
-		PlatformID:   strings.TrimSpace(r.Header.Get(HeaderPlatformID)),
-		PlatformName: strings.TrimSpace(r.Header.Get(HeaderPlatformName)),
-		TenantID:     strings.TrimSpace(r.Header.Get(HeaderTenantID)),
-		TenantName:   strings.TrimSpace(r.Header.Get(HeaderTenantName)),
+	id := evpanda.Platform{
+		ID:         strings.TrimSpace(r.Header.Get(HeaderPlatformID)),
+		Name:       strings.TrimSpace(r.Header.Get(HeaderPlatformName)),
+		TenantID:   strings.TrimSpace(r.Header.Get(HeaderTenantID)),
+		TenantName: strings.TrimSpace(r.Header.Get(HeaderTenantName)),
 	}
-	if id.PlatformID == "" && id.PlatformName == "" {
-		return evpanda.RoamingIdentity{}, false
+	if id.ID == "" && id.Name == "" {
+		return evpanda.Platform{}, false
 	}
 	return id, true
 }
@@ -162,15 +162,15 @@ func DefaultResolver(r *http.Request) (evpanda.RoamingIdentity, bool) {
 // safeResolve runs a resolver under panic protection and validates what
 // it returns. A panicking resolver, a false result, or an invalid
 // identity all mean the same thing: skip capture for this request.
-func safeResolve(resolve Resolver, r *http.Request) (id evpanda.RoamingIdentity, ok bool) {
+func safeResolve(resolve Resolver, r *http.Request) (id evpanda.Platform, ok bool) {
 	defer func() {
 		if recover() != nil {
-			id, ok = evpanda.RoamingIdentity{}, false
+			id, ok = evpanda.Platform{}, false
 		}
 	}()
 	id, ok = resolve(r)
 	if !ok || !id.Valid() {
-		return evpanda.RoamingIdentity{}, false
+		return evpanda.Platform{}, false
 	}
 	return id, true
 }

@@ -124,7 +124,7 @@ func cloneBody(b []byte) []byte {
 type OCPIMessageInput struct {
 	// Identity attributes the message to a roaming partner. Invalid ⇒
 	// message dropped.
-	Identity RoamingIdentity
+	Identity Platform
 	// Data is the captured HTTP exchange.
 	Data HTTPExchange
 }
@@ -136,7 +136,7 @@ type OCPIMessageInput struct {
 type OCPPMessageInput struct {
 	// Identity is the charge point this event belongs to. Invalid ⇒
 	// message dropped.
-	Identity ChargerIdentity
+	Identity Charger
 	// ConnectionID is stable for the lifetime of this connection. The
 	// session handle returned by [OCPPClient.Connection] mints and
 	// carries it for you.
@@ -151,7 +151,7 @@ type OCPPMessageInput struct {
 // plus the direction the capture method stamped.
 type ocpiMessage struct {
 	Direction ocpiDirection
-	Identity  RoamingIdentity
+	Identity  Platform
 	Data      HTTPExchange
 }
 
@@ -159,7 +159,7 @@ type ocpiMessage struct {
 // is empty for connect and disconnect events.
 type ocppMessage struct {
 	EventType    ocppEventType
-	Identity     ChargerIdentity
+	Identity     Charger
 	ConnectionID string
 	Direction    OCPPDirection
 	Payload      []byte
@@ -182,20 +182,28 @@ type message interface {
 // request is worth the work. Nothing here fails loudly; an invalid
 // identity means the caller drops the message.
 
-// RoamingIdentity is the OCPI roaming context for a message. PlatformID
-// and PlatformName are required; TenantID and TenantName are optional but
-// all-or-nothing (supply both or neither).
-type RoamingIdentity struct {
-	PlatformID   string
-	PlatformName string
-	TenantID     string
-	TenantName   string
+// Platform identifies the roaming partner an OCPI message was exchanged
+// with — never your own platform.
+//
+// ID and Name are required. TenantID and TenantName describe a different
+// subject: which of *your* tenants the exchange belongs to, which is why
+// they keep the prefix the platform's own fields do not need. They are
+// optional but all-or-nothing — supply both or neither.
+type Platform struct {
+	ID   string
+	Name string
+
+	TenantID   string
+	TenantName string
 }
 
-// ChargerIdentity is the OCPP charger context for a message. ChargerID is
-// required; TenantID and TenantName are optional but all-or-nothing.
-type ChargerIdentity struct {
-	ChargerID  string
+// Charger identifies the charge point an OCPP event belongs to.
+//
+// ID is required. TenantID and TenantName say which of your tenants the
+// charger belongs to; they are optional but all-or-nothing.
+type Charger struct {
+	ID string
+
 	TenantID   string
 	TenantName string
 }
@@ -210,18 +218,18 @@ func isTenantPairValid(tenantID, tenantName string) bool {
 	return isNonEmpty(tenantID) == isNonEmpty(tenantName)
 }
 
-// Valid reports whether the identity can attribute a message: PlatformID
-// and PlatformName present, and the tenant pair all-or-nothing. The SDK
-// silently drops messages that fail it.
-func (id RoamingIdentity) Valid() bool {
-	return isNonEmpty(id.PlatformID) &&
-		isNonEmpty(id.PlatformName) &&
+// Valid reports whether the platform can attribute a message: ID and
+// Name present, and the tenant pair all-or-nothing. The SDK silently
+// drops messages that fail it.
+func (id Platform) Valid() bool {
+	return isNonEmpty(id.ID) &&
+		isNonEmpty(id.Name) &&
 		isTenantPairValid(id.TenantID, id.TenantName)
 }
 
-// Valid reports whether the identity can attribute a message: ChargerID
-// present, and the tenant pair all-or-nothing.
-func (id ChargerIdentity) Valid() bool {
-	return isNonEmpty(id.ChargerID) &&
+// Valid reports whether the charger can attribute a message: ID present,
+// and the tenant pair all-or-nothing.
+func (id Charger) Valid() bool {
+	return isNonEmpty(id.ID) &&
 		isTenantPairValid(id.TenantID, id.TenantName)
 }

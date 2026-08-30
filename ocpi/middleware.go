@@ -116,7 +116,7 @@ type inboundExchange struct {
 // shipInbound turns the recorded exchange into a capture, dropping it if
 // either body outgrew the cap or the connection was hijacked (in which
 // case there is no HTTP response to describe).
-func shipInbound(c Capturer, identity evpanda.RoamingIdentity, ex inboundExchange) {
+func shipInbound(c Capturer, identity evpanda.Platform, ex inboundExchange) {
 	if ex.rec.hijacked {
 		return
 	}

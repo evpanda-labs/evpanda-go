@@ -28,9 +28,9 @@ import (
 //
 //	client := &http.Client{Transport: panda.RoundTripper(nil)}
 //
-//	ctx := evpanda.ContextWithIdentity(ctx, evpanda.RoamingIdentity{
-//		PlatformID:   partner.ID,
-//		PlatformName: partner.Name,
+//	ctx := evpanda.ContextWithIdentity(ctx, evpanda.Platform{
+//		ID:   partner.ID,
+//		Name: partner.Name,
 //	})
 //	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, partner.URL+"/sessions", body)
 //	req.Header.Set("Authorization", "Token "+partner.TokenB)
@@ -135,7 +135,7 @@ func (t *ocpiRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 // bodies fill in as the transport writes the request and the caller reads
 // the response.
 type outboundExchange struct {
-	identity    evpanda.RoamingIdentity
+	identity    evpanda.Platform
 	method      string
 	url         string
 	statusCode  int

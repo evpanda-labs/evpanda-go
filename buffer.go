@@ -152,7 +152,7 @@ func (r *ringBuffer) byteLen() int {
 func (m ocpiMessage) size() int {
 	return envelopeOverhead +
 		len(m.Direction) +
-		len(m.Identity.PlatformID) + len(m.Identity.PlatformName) +
+		len(m.Identity.ID) + len(m.Identity.Name) +
 		len(m.Identity.TenantID) + len(m.Identity.TenantName) +
 		len(m.Data.Method) + len(m.Data.URL) +
 		len(m.Data.RequestBody) + len(m.Data.ResponseBody) +
@@ -162,7 +162,7 @@ func (m ocpiMessage) size() int {
 // size reports the accounted footprint of an OCPP capture.
 func (m ocppMessage) size() int {
 	return envelopeOverhead +
-		len(m.Identity.ChargerID) +
+		len(m.Identity.ID) +
 		len(m.Identity.TenantID) + len(m.Identity.TenantName) +
 		len(m.ConnectionID) + len(m.Direction) + len(m.Payload)
 }

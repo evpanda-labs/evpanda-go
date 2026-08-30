@@ -148,11 +148,11 @@ func ocpiConfig(endpoint string) evpanda.OCPIConfig {
 // off-allowlist header and a tracing header the allowlist keeps.
 func makeOCPI(i int) evpanda.OCPIMessageInput {
 	return evpanda.OCPIMessageInput{
-		Identity: evpanda.RoamingIdentity{
-			PlatformID:   "acme",
-			PlatformName: "Acme Mobility",
-			TenantID:     "t1",
-			TenantName:   "Tenant One",
+		Identity: evpanda.Platform{
+			ID:         "acme",
+			Name:       "Acme Mobility",
+			TenantID:   "t1",
+			TenantName: "Tenant One",
 		},
 		Data: evpanda.HTTPExchange{
 			Method:     "POST",
@@ -365,7 +365,7 @@ func TestOCPPSessionAndWireShape(t *testing.T) {
 	}
 	defer panda.Close()
 
-	sess := panda.Connection(evpanda.ChargerIdentity{ChargerID: "CP-001"})
+	sess := panda.Connection(evpanda.Charger{ID: "CP-001"})
 	if sess.ConnectionID == "" {
 		t.Fatal("session must mint a connection id")
 	}
@@ -437,7 +437,7 @@ func TestOCPPPrimitivesValidation(t *testing.T) {
 	}
 	defer panda.Close()
 
-	valid := evpanda.ChargerIdentity{ChargerID: "CP-002"}
+	valid := evpanda.Charger{ID: "CP-002"}
 
 	// Dropped: missing data / missing direction / invalid identity.
 	panda.CaptureMessage(evpanda.OCPPMessageInput{Identity: valid, ConnectionID: "c1", Direction: evpanda.FromCP})
@@ -445,7 +445,7 @@ func TestOCPPPrimitivesValidation(t *testing.T) {
 	panda.CaptureMessage(evpanda.OCPPMessageInput{ConnectionID: "c1", Data: []byte("x"), Direction: evpanda.FromCP})
 	// Tenant all-or-nothing: only one of the pair → dropped.
 	panda.CaptureConnect(evpanda.OCPPMessageInput{
-		Identity:     evpanda.ChargerIdentity{ChargerID: "CP-003", TenantID: "t1"},
+		Identity:     evpanda.Charger{ID: "CP-003", TenantID: "t1"},
 		ConnectionID: "c2",
 	})
 	// Kept.
@@ -660,7 +660,7 @@ func TestBadConfigIsInert(t *testing.T) {
 	if err == nil {
 		t.Fatal("StartOCPP on a bad config must return an error")
 	}
-	sess := ocpp.Connection(evpanda.ChargerIdentity{ChargerID: "CP-001"}) // safe on inert
+	sess := ocpp.Connection(evpanda.Charger{ID: "CP-001"}) // safe on inert
 	sess.Message([]byte("x"), evpanda.FromCP)
 	sess.Disconnect()
 	if err := ocpp.Close(); err != nil {
@@ -1175,7 +1175,7 @@ func TestCapturedFramesDoNotAliasTheCaller(t *testing.T) {
 	defer func() { _ = panda.Close() }()
 
 	frame := []byte(`[2,"id","BootNotification",{}]`)
-	sess := panda.Connection(evpanda.ChargerIdentity{ChargerID: "CP-001"})
+	sess := panda.Connection(evpanda.Charger{ID: "CP-001"})
 	sess.Message(frame, evpanda.FromCP)
 	copy(frame, bytes.Repeat([]byte("X"), len(frame)))
 
