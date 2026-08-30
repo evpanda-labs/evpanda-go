@@ -1,12 +1,21 @@
+# Cuts a release when a semver tag is pushed.
+#
+# To release:
+#   1. merge whatever the release contains to master
+#   2. git tag v0.4.0 && git push origin v0.4.0
+#
 # Go modules have no registry and nothing to upload: a version exists the
 # moment a semver tag is pushed, and proxy.golang.org fetches it straight
-# from this repo. So this workflow is not an upload step — it is the gate
-# that keeps a broken commit from becoming a permanent version (tags are
-# immutable on the proxy once fetched), plus the two chores that follow:
-# cut a GitHub Release, and ask the proxy for the version so pkg.go.dev
-# indexes it in minutes rather than whenever a stranger first fetches it.
+# from this repo. So `publish` is not an upload step — it is the nudge that
+# makes the proxy fetch, so pkg.go.dev indexes the version in minutes
+# rather than whenever a stranger first fetches it.
 #
-# To release: `git tag v0.2.0 && git push origin v0.2.0`.
+# What this workflow is really for is the gate: tags are immutable on the
+# proxy once fetched, so a broken commit must not become a permanent
+# version.
+#
+# The four jobs are the same four in all three EVPanda SDKs:
+#   validate-tag → checks → publish → github-release
 name: Release
 
 on:
@@ -22,23 +31,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Check the tag is a Go-compatible semver version
+      - name: Check the tag is a valid version
         env:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-
           # Go requires the leading v and strict semver; anything else is
           # not a module version and the proxy will ignore it.
           if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
             echo "::error::'$TAG' is not a Go module version (want vX.Y.Z or vX.Y.Z-pre)"
             exit 1
           fi
+          echo "$TAG is a valid module version"
 
-          # Major 2 and above must live at a /vN module path, or consumers
-          # silently keep resolving the v1 line. This is the single easiest
-          # Go release mistake to make, so fail loudly rather than ship it.
+      - name: Check the tag matches the version in the tree
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Go has no version file — the tag is the version. What can
+          # disagree is the module path: major 2 and above must live at a
+          # /vN path, or consumers silently keep resolving the v1 line.
+          # This is the single easiest Go release mistake to make, so fail
+          # loudly rather than ship it.
           major="$(printf '%s' "$TAG" | sed -E 's|^v([0-9]+)\..*|\1|')"
           if [ "$major" -ge 2 ]; then
             if ! grep -Eq "^module .+/v${major}\$" go.mod; then
@@ -47,8 +65,7 @@ jobs:
               exit 1
             fi
           fi
-
-          echo "$TAG is a valid module version"
+          echo "the module path matches $TAG"
 
       - name: Check the tag is on master
         env:
@@ -68,31 +85,11 @@ jobs:
     uses: ./.github/workflows/checks.yml
 
   publish:
-    name: Publish
+    name: Publish to the Go module proxy
     needs: checks
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # required to create the GitHub Release
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # release notes are generated from history
-
-      - name: Create the GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          # Pre-1.0 and pre-release tags are marked as such so consumers
-          # are not told an unstable version is the latest stable one.
-          flags=(--generate-notes --title "$TAG")
-          case "$TAG" in
-            v0.*|*-*) flags+=(--prerelease) ;;
-          esac
-          gh release create "$TAG" "${flags[@]}"
-
-      - name: Publish to the Go module proxy
+      - name: Publish
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -117,6 +114,31 @@ jobs:
             sleep 20
           done
 
-          # Not fatal: the version is already published by virtue of the
-          # tag existing. It will be indexed on the first real fetch.
+          # Not fatal: the version is already published by virtue of the tag
+          # existing. It will be indexed on the first real fetch.
           echo "::warning::proxy did not serve ${TAG} within ~2 minutes; it will index on first fetch"
+
+  github-release:
+    name: Create the GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # release notes are generated from history
+
+      - name: Create it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Pre-1.0 and pre-release tags are marked as such so consumers are
+          # not told an unstable version is the latest stable one.
+          flags=(--generate-notes --title "$TAG")
+          case "$TAG" in
+            v0.*|*-*) flags+=(--prerelease) ;;
+          esac
+          gh release create "$TAG" "${flags[@]}"

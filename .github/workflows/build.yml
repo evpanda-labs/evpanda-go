@@ -1,3 +1,6 @@
+# The gate every push and pull request clears. It calls checks.yml, which
+# release.yml calls too — so a release clears exactly the same bar, and
+# there is only ever one copy of these steps to keep in step.
 name: Build
 
 on:
@@ -7,6 +10,13 @@ on:
 
 permissions:
   contents: read
+
+# One run per ref. A second push to a pull request supersedes the first
+# rather than racing it; master runs are never cancelled, since those are
+# the ones a release is cut from.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
