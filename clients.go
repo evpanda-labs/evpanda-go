@@ -167,7 +167,7 @@ func (c *client) Shutdown(ctx context.Context) error {
 // it. In the default mode the worker's health line reports it instead: a
 // panic that repeats per message would otherwise log at message rate.
 func (c *client) logFault(op string, r any) {
-	c.stats.countDrop(dropPanic, 1)
+	c.stats.countDrop(dropFault, 1)
 	w := c.current()
 	if w == nil || w.cfg.logger == nil || w.cfg.logMode != LogModeDebug {
 		return

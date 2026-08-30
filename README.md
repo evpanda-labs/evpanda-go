@@ -280,6 +280,35 @@ it without touching code:
 | `LogModeErrors` | Default. Config problems at startup, plus the per-minute summary. |
 | `LogModeDebug` | Adds per-batch delivery failures and a summary on close. |
 
+## Is it working?
+
+`Stats()` is a snapshot of the client's delivery counters, always available and
+safe on an inert or closed client. Each counter maps to one root cause:
+
+```go
+stats := panda.Stats()
+// {Captured:40120 DroppedInvalid:0 DroppedOversize:0 DroppedEvicted:9402
+//  DroppedUndeliverable:0 DroppedFault:0 BufferedMessages:2 BufferBytes:528}
+```
+
+| Counter | What a high value means |
+|---|---|
+| `Captured` is 0 | The capture path is not wired in |
+| `DroppedInvalid` | Identity resolution is failing |
+| `DroppedOversize` | Bodies exceed `MaxCaptureBytes` |
+| `DroppedEvicted` | Upstream can't keep up, or the buffer is undersized |
+| `DroppedUndeliverable` | Network, API key, or ingestion fault |
+| `DroppedFault` | A bug in the SDK — please report it |
+
+It is a pull-based snapshot, so it feeds Prometheus, OpenTelemetry or a log
+line without the SDK depending on any of them:
+
+```go
+prometheus.MustRegister(prometheus.NewCounterFunc(opts, func() float64 {
+	return float64(panda.Stats().DroppedEvicted)
+}))
+```
+
 ## Shutdown
 
 ```go

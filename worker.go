@@ -97,7 +97,7 @@ func (w *worker) loop(ctx context.Context) {
 	// that panicked its worker is broken and should be noisy about it.
 	defer func() {
 		if r := recover(); r != nil {
-			w.stats.countDrop(dropPanic, 1)
+			w.stats.countDrop(dropFault, 1)
 			if w.cfg.logger != nil {
 				w.cfg.logger.Error("evpanda: delivery stopped by a panic — please report this",
 					"error", fmt.Sprint(r))

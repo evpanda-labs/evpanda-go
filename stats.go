@@ -31,7 +31,7 @@ import (
 //	DroppedEvicted high         upstream can't keep up, or the buffer is
 //	                            undersized for the traffic
 //	DroppedUndeliverable high   network, API key, or ingestion fault
-//	DroppedPanic > 0            a bug in the SDK; please report it
+//	DroppedFault > 0            a bug in the SDK; please report it
 type Stats struct {
 	// Captured is the number of messages that passed the chokepoint and
 	// entered the buffer.
@@ -47,9 +47,14 @@ type Stats struct {
 	// DroppedUndeliverable counts messages in batches the transport could
 	// not deliver — retries exhausted, or a permanent rejection.
 	DroppedUndeliverable uint64
-	// DroppedPanic counts captures lost to a recovered panic. Any value
+	// DroppedFault counts captures lost to a recovered panic. Any value
 	// above zero is a bug in the SDK.
-	DroppedPanic uint64
+	//
+	// It is named for the concept rather than the mechanism so the three
+	// SDKs report the same counter: Node and Python have exceptions where
+	// Go has panics, and an operator reading a dashboard should not have to
+	// know which runtime produced the number.
+	DroppedFault uint64
 
 	// BufferedMessages is how many messages are awaiting delivery now.
 	BufferedMessages int
@@ -61,7 +66,7 @@ type Stats struct {
 // TotalDropped is the sum of every Dropped* counter.
 func (s Stats) TotalDropped() uint64 {
 	return s.DroppedInvalid + s.DroppedOversize + s.DroppedEvicted +
-		s.DroppedUndeliverable + s.DroppedPanic
+		s.DroppedUndeliverable + s.DroppedFault
 }
 
 // stats is the live counter set, shared by the chokepoint, the buffer and
@@ -72,7 +77,7 @@ type stats struct {
 	droppedOversize      atomic.Uint64
 	droppedEvicted       atomic.Uint64
 	droppedUndeliverable atomic.Uint64
-	droppedPanic         atomic.Uint64
+	droppedFault         atomic.Uint64
 }
 
 // snapshot reads the counters. The reads are not atomic as a set, so a
@@ -89,7 +94,7 @@ func (s *stats) snapshot() Stats {
 		DroppedOversize:      s.droppedOversize.Load(),
 		DroppedEvicted:       s.droppedEvicted.Load(),
 		DroppedUndeliverable: s.droppedUndeliverable.Load(),
-		DroppedPanic:         s.droppedPanic.Load(),
+		DroppedFault:         s.droppedFault.Load(),
 	}
 }
 
@@ -124,8 +129,8 @@ func (s *stats) counterFor(reason dropReason) *atomic.Uint64 {
 		return &s.droppedEvicted
 	case dropUndeliverable:
 		return &s.droppedUndeliverable
-	case dropPanic:
-		return &s.droppedPanic
+	case dropFault:
+		return &s.droppedFault
 	case dropNone:
 		return nil
 	}
@@ -142,7 +147,7 @@ func (s Stats) sub(prev Stats) Stats {
 		DroppedOversize:      s.DroppedOversize - prev.DroppedOversize,
 		DroppedEvicted:       s.DroppedEvicted - prev.DroppedEvicted,
 		DroppedUndeliverable: s.DroppedUndeliverable - prev.DroppedUndeliverable,
-		DroppedPanic:         s.DroppedPanic - prev.DroppedPanic,
+		DroppedFault:         s.DroppedFault - prev.DroppedFault,
 		BufferedMessages:     s.BufferedMessages,
 		BufferBytes:          s.BufferBytes,
 	}
@@ -163,7 +168,7 @@ func (s Stats) logAttrs() []any {
 	add("oversize", s.DroppedOversize)
 	add("evicted", s.DroppedEvicted)
 	add("undeliverable", s.DroppedUndeliverable)
-	add("panic", s.DroppedPanic)
+	add("fault", s.DroppedFault)
 	return append(attrs, "buffered", s.BufferedMessages, "buffer_bytes", s.BufferBytes)
 }
 
@@ -178,7 +183,7 @@ const (
 	dropOversize
 	dropEvicted
 	dropUndeliverable
-	dropPanic
+	dropFault
 )
 
 // ── Health reporting ─────────────────────────────────────────────────────

@@ -292,13 +292,13 @@ func TestGuardCaptureSwallowsAndCounts(t *testing.T) {
 
 	c.guardCapture("boom", func() { panic("capture exploded") })
 
-	if got := c.Stats().DroppedPanic; got != 1 {
-		t.Fatalf("DroppedPanic = %d, want 1 — a recovered panic must be counted", got)
+	if got := c.Stats().DroppedFault; got != 1 {
+		t.Fatalf("DroppedFault = %d, want 1 — a recovered panic must be counted", got)
 	}
 	// Still usable afterwards.
 	c.guardCapture("fine", func() {})
-	if got := c.Stats().DroppedPanic; got != 1 {
-		t.Fatalf("DroppedPanic = %d, want it unchanged by a clean call", got)
+	if got := c.Stats().DroppedFault; got != 1 {
+		t.Fatalf("DroppedFault = %d, want it unchanged by a clean call", got)
 	}
 }
 
@@ -477,7 +477,7 @@ func TestCountDropMapping(t *testing.T) {
 		{dropOversize, func(s Stats) uint64 { return s.DroppedOversize }},
 		{dropEvicted, func(s Stats) uint64 { return s.DroppedEvicted }},
 		{dropUndeliverable, func(s Stats) uint64 { return s.DroppedUndeliverable }},
-		{dropPanic, func(s Stats) uint64 { return s.DroppedPanic }},
+		{dropFault, func(s Stats) uint64 { return s.DroppedFault }},
 	}
 	for _, tc := range tests {
 		st := &stats{}
