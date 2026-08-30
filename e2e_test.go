@@ -178,7 +178,7 @@ func TestOCPIWireShape(t *testing.T) {
 	}
 	defer panda.Close()
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		panda.CaptureInboundMessage(makeOCPI(i))
 	}
 	panda.CaptureOutboundMessage(makeOCPI(2))
@@ -475,7 +475,7 @@ func TestBatchChunking(t *testing.T) {
 	defer panda.Close()
 
 	const n = 2500
-	for i := 0; i < n; i++ {
+	for i := range n {
 		panda.CaptureInboundMessage(makeOCPI(i))
 	}
 
@@ -535,7 +535,7 @@ func TestDropOldest(t *testing.T) {
 	defer panda.Close()
 
 	const n = 400 // stays under the 1000-message size trigger
-	for i := 0; i < n; i++ {
+	for i := range n {
 		panda.CaptureInboundMessage(makeOCPI(i))
 	}
 	if err := panda.Flush(); err != nil {
@@ -581,7 +581,7 @@ func TestFlushOnClose(t *testing.T) {
 		t.Fatalf("StartOCPI: %v", err)
 	}
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		panda.CaptureInboundMessage(makeOCPI(i))
 	}
 	if len(mock.recordsFor("/v1/ocpi")) != 0 {
@@ -615,7 +615,7 @@ func TestNeverPanicsWhenUpstreamFails(t *testing.T) {
 	defer panda.Close()
 
 	// Capture during a failing upstream — must not panic.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		panda.CaptureInboundMessage(makeOCPI(i))
 	}
 	// Malformed customer input — must not panic either.

@@ -20,7 +20,7 @@ import (
 // must land in the counter that names its cause, since that mapping is
 // what makes Stats() diagnostic.
 
-func validRoaming() Platform {
+func validPlatform() Platform {
 	return Platform{ID: "acme", Name: "Acme"}
 }
 
@@ -33,7 +33,7 @@ func TestPrepareOCPIDrops(t *testing.T) {
 		msg  ocpiMessage
 		want dropReason
 	}{
-		{"valid", ocpiMessage{Direction: ocpiInbound, Identity: validRoaming()}, dropNone},
+		{"valid", ocpiMessage{Direction: ocpiInbound, Identity: validPlatform()}, dropNone},
 		{"no identity", ocpiMessage{Direction: ocpiInbound}, dropInvalidIdentity},
 		{"missing platform name", ocpiMessage{
 			Identity: Platform{ID: "acme"},
@@ -48,15 +48,15 @@ func TestPrepareOCPIDrops(t *testing.T) {
 			},
 		}, dropNone},
 		{"oversize request body", ocpiMessage{
-			Identity: validRoaming(),
+			Identity: validPlatform(),
 			Data:     HTTPExchange{RequestBody: make([]byte, 11)},
 		}, dropOversize},
 		{"oversize response body", ocpiMessage{
-			Identity: validRoaming(),
+			Identity: validPlatform(),
 			Data:     HTTPExchange{ResponseBody: make([]byte, 11)},
 		}, dropOversize},
 		{"body exactly at the cap", ocpiMessage{
-			Identity: validRoaming(),
+			Identity: validPlatform(),
 			Data:     HTTPExchange{RequestBody: make([]byte, 10)},
 		}, dropNone},
 	}
@@ -124,7 +124,7 @@ func TestPrepareRunsTheRedactor(t *testing.T) {
 		return m
 	}
 	env, reason := prepareOCPI(ocpiMessage{
-		Identity: validRoaming(),
+		Identity: validPlatform(),
 		Data:     HTTPExchange{URL: "/ocpi/2.2/cdrs"},
 	}, redact, 10)
 	if reason != dropNone {
@@ -183,7 +183,7 @@ func TestRedactorPresenceByProtocol(t *testing.T) {
 func TestChokepointTakesOwnership(t *testing.T) {
 	src := []byte(`{"id":"cdr-1"}`)
 	env, reason := prepareOCPI(ocpiMessage{
-		Identity: validRoaming(),
+		Identity: validPlatform(),
 		Data: HTTPExchange{
 			Method: "POST", URL: "/ocpi/2.2/cdrs",
 			RequestBody: src, ResponseBody: src, // assigned, not Set
@@ -225,7 +225,7 @@ func TestRedactorMayMutateInPlace(t *testing.T) {
 		return m
 	}
 	env, reason := prepareOCPI(ocpiMessage{
-		Identity: validRoaming(),
+		Identity: validPlatform(),
 		Data:     HTTPExchange{Method: "POST", URL: "/x", RequestBody: src},
 	}, inPlace, 1024)
 	if reason != dropNone {

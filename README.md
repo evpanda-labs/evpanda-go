@@ -9,8 +9,8 @@ them in batches to the EVPanda ingestion API.
 
 - **Non-blocking.** Capture calls never wait on the network and never panic
   into your process.
-- **Bounded.** Memory is capped by a byte budget you set; under pressure the
-  SDK drops its own data rather than yours.
+- **Bounded.** Undelivered captures are capped by a byte budget you set;
+  under pressure the SDK drops its own data rather than yours.
 - **Safe by default.** Secrets are stripped before anything is buffered.
 - **Small.** One dependency (`klauspost/compress`), one background goroutine
   per client.
@@ -241,12 +241,26 @@ if err != nil {
 | `Endpoint` | `https://ingest.evpanda.io` | Ingestion API base URL. Set only to reach another environment |
 | `APIKey` | `$EVPANDA_API_KEY` | Sent as `X-API-Key`. **Required** |
 | `MaxBufferBytes` | `32 MiB` | Memory ceiling for undelivered captures; oldest are evicted past it |
-| `MaxCaptureBytes` | `64 KiB` | Per body / per frame cap; an oversize body drops the whole message |
+| `MaxCaptureBytes` | `64 KiB` | Per body / per frame cap; an oversize body drops the whole message. Also bounds what the HTTP adapters hold per in-flight request |
 | `FlushInterval` | `5s` | Maximum time between deliveries |
 | `DrainTimeout` | `10s` | How long `Close` waits to drain (minimum `5s`) |
 | `LogMode` | `errors` | `LogModeSilent`, `LogModeErrors`, `LogModeDebug` |
 | `Logger` | `slog.Default()` | Where the SDK's own logs go |
 | `OCPIAllowedHeaders` | — | *(OCPI only)* Extra headers to capture, on top of the defaults |
+
+## Memory
+
+`MaxBufferBytes` caps everything waiting to be delivered — that is the number
+to provision against, and the SDK evicts rather than exceed it.
+
+The HTTP adapters add a second, smaller cost: while a request is in flight
+they accumulate a copy of its bodies, bounded per request by
+`MaxCaptureBytes` and released as soon as the exchange is captured. It grows
+with the body you actually read rather than the cap, so ordinary OCPI traffic
+barely registers — but a server taking large CDR pushes at high concurrency
+should count on roughly one extra copy of each in-flight body. Calling
+`CaptureInboundMessage` yourself instead of using an adapter avoids it, since
+you already hold the bytes.
 
 ## Logging
 

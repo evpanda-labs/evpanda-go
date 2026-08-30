@@ -562,7 +562,7 @@ func TestRoundTripperOnInertClient(t *testing.T) {
 
 // ── Context helpers ──────────────────────────────────────────────────────
 
-func TestRoamingIdentityContextRoundTrip(t *testing.T) {
+func TestIdentityContextRoundTrip(t *testing.T) {
 	if _, ok := ocpi.IdentityFromContext(context.Background()); ok {
 		t.Fatal("a bare context must not carry an identity")
 	}
@@ -753,3 +753,52 @@ func TestMiddlewareLetsHandlerPanicsThrough(t *testing.T) {
 	// And the exchange is still captured on the way out.
 	waitFor(t, func() bool { return len(mock.recordsFor("/v1/ocpi")) == 1 }, 3*time.Second)
 }
+
+// A Capturer that misbehaves must degrade to a pass-through, never take
+// the host down. A typed-nil client is the realistic way this happens:
+// it is not == nil as an interface, so it slips past the obvious guard
+// and panics on the first method call.
+func TestAdaptersSurviveAMisbehavingCapturer(t *testing.T) {
+	var typedNil *evpanda.OCPIClient // declared, never assigned
+
+	for _, tc := range []struct {
+		name string
+		c    ocpi.Capturer
+	}{
+		{"typed-nil client", typedNil},
+		{"Capturing panics", panickyCapturer{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte("handled"))
+			})
+			srv := httptest.NewServer(ocpi.Middleware(tc.c)(handler))
+			defer srv.Close()
+
+			resp, err := http.Get(srv.URL + "/ocpi/2.2/cdrs")
+			if err != nil {
+				t.Fatalf("the request must still be served: %v", err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK || string(body) != "handled" {
+				t.Fatalf("response altered: %d %q", resp.StatusCode, body)
+			}
+
+			client := &http.Client{Transport: ocpi.RoundTripper(tc.c, nil)}
+			r2, err := client.Get(srv.URL + "/x")
+			if err != nil {
+				t.Fatalf("the outbound call must still go through: %v", err)
+			}
+			_ = r2.Body.Close()
+		})
+	}
+}
+
+// panickyCapturer stands in for a third-party Capturer with a fault of
+// its own — the adapters take an interface they do not control.
+type panickyCapturer struct{}
+
+func (panickyCapturer) CaptureInboundMessage(evpanda.OCPIMessageInput)  { panic("boom") }
+func (panickyCapturer) CaptureOutboundMessage(evpanda.OCPIMessageInput) { panic("boom") }
+func (panickyCapturer) Capturing() (int, bool)                          { panic("boom") }

@@ -221,15 +221,15 @@ func isTenantPairValid(tenantID, tenantName string) bool {
 // Valid reports whether the platform can attribute a message: ID and
 // Name present, and the tenant pair all-or-nothing. The SDK silently
 // drops messages that fail it.
-func (id Platform) Valid() bool {
-	return isNonEmpty(id.ID) &&
-		isNonEmpty(id.Name) &&
-		isTenantPairValid(id.TenantID, id.TenantName)
+func (p Platform) Valid() bool {
+	return isNonEmpty(p.ID) &&
+		isNonEmpty(p.Name) &&
+		isTenantPairValid(p.TenantID, p.TenantName)
 }
 
 // Valid reports whether the charger can attribute a message: ID present,
 // and the tenant pair all-or-nothing.
-func (id Charger) Valid() bool {
-	return isNonEmpty(id.ID) &&
-		isTenantPairValid(id.TenantID, id.TenantName)
+func (c Charger) Valid() bool {
+	return isNonEmpty(c.ID) &&
+		isTenantPairValid(c.TenantID, c.TenantName)
 }
