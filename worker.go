@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // ErrDrainIncomplete is returned by Close and Shutdown when the drain
@@ -145,7 +146,8 @@ func (w *worker) loop(ctx context.Context) {
 
 // captureOCPI is the producer entry point for OCPI; see prepareOCPI.
 func (w *worker) captureOCPI(msg ocpiMessage, redact ocpiRedactor) {
-	env, reason := prepareOCPI(msg, redact, w.cfg.maxCaptureBytes)
+	env, reason, bodiesDropped := prepareOCPI(msg, redact, w.cfg.maxCaptureBytes)
+	w.stats.countBodiesDropped(bodiesDropped)
 	if reason != dropNone {
 		w.stats.countDrop(reason, 1)
 		return
@@ -155,7 +157,8 @@ func (w *worker) captureOCPI(msg ocpiMessage, redact ocpiRedactor) {
 
 // captureOCPP is the producer entry point for OCPP; see prepareOCPP.
 func (w *worker) captureOCPP(msg ocppMessage, redact ocppRedactor) {
-	env, reason := prepareOCPP(msg, redact, w.cfg.maxCaptureBytes)
+	env, reason, bodiesDropped := prepareOCPP(msg, redact, w.cfg.maxCaptureBytes)
+	w.stats.countBodiesDropped(bodiesDropped)
 	if reason != dropNone {
 		w.stats.countDrop(reason, 1)
 		return
@@ -255,12 +258,26 @@ func (w *worker) flush(ctx context.Context) {
 //
 // It returns dropNone when the envelope is good; any other reason names
 // the counter the drop belongs to.
-func prepareOCPI(msg ocpiMessage, redact ocpiRedactor, maxCaptureBytes int) (bufferedMessage, dropReason) {
+func prepareOCPI(msg ocpiMessage, redact ocpiRedactor, maxCaptureBytes int) (bufferedMessage, dropReason, int) {
 	if !msg.Identity.Valid() {
-		return bufferedMessage{}, dropInvalidIdentity
+		return bufferedMessage{}, dropInvalidIdentity, 0
 	}
 	if len(msg.Data.RequestBody) > maxCaptureBytes || len(msg.Data.ResponseBody) > maxCaptureBytes {
-		return bufferedMessage{}, dropOversize
+		return bufferedMessage{}, dropOversize, 0
+	}
+	// A body that is not valid UTF-8 cannot travel: the wire contract
+	// carries it as text, and shipping it anyway would substitute U+FFFD
+	// for the invalid bytes and store corruption. Drop the body, keep the
+	// exchange — method, URL, status and headers are still worth having,
+	// and the counter says the body went missing on purpose.
+	bodiesDropped := 0
+	if !utf8.Valid(msg.Data.RequestBody) {
+		msg.Data.RequestBody = nil
+		bodiesDropped++
+	}
+	if !utf8.Valid(msg.Data.ResponseBody) {
+		msg.Data.ResponseBody = nil
+		bodiesDropped++
 	}
 	// Take ownership before redacting. From here the bytes are the SDK's,
 	// so a redactor may rewrite a body in place, and the host may reuse
@@ -269,21 +286,28 @@ func prepareOCPI(msg ocpiMessage, redact ocpiRedactor, maxCaptureBytes int) (buf
 	if redact != nil {
 		msg = redact(msg)
 	}
-	return bufferedMessage{capturedAt: nowISO(), message: msg}, dropNone
+	return bufferedMessage{capturedAt: nowISO(), message: msg}, dropNone, bodiesDropped
 }
 
 // prepareOCPP validates the identity and enforces the frame cap. A
 // message event with no frame or no direction is dropped: the ingestion
 // contract requires both on event_type 2.
-func prepareOCPP(msg ocppMessage, redact ocppRedactor, maxCaptureBytes int) (bufferedMessage, dropReason) {
+func prepareOCPP(msg ocppMessage, redact ocppRedactor, maxCaptureBytes int) (bufferedMessage, dropReason, int) {
 	if !msg.Identity.Valid() {
-		return bufferedMessage{}, dropInvalidIdentity
+		return bufferedMessage{}, dropInvalidIdentity, 0
 	}
 	if len(msg.Payload) > maxCaptureBytes {
-		return bufferedMessage{}, dropOversize
+		return bufferedMessage{}, dropOversize, 0
 	}
 	if msg.EventType == ocppEventTypeMessage && (len(msg.Payload) == 0 || msg.Direction == "") {
-		return bufferedMessage{}, dropOversize
+		return bufferedMessage{}, dropOversize, 0
+	}
+	// Unlike an OCPI body, a frame is the whole message: event_type 2
+	// requires one, so a frame that is not valid UTF-8 takes the message
+	// with it. It is counted twice on purpose, once as the body that went
+	// missing and once as the message that did.
+	if !utf8.Valid(msg.Payload) {
+		return bufferedMessage{}, dropOversize, 1
 	}
 	msg.Payload = cloneBody(msg.Payload) // same ownership transfer as OCPI
 	// nil is the normal case for OCPP: there is nothing to redact, so
@@ -291,5 +315,5 @@ func prepareOCPP(msg ocppMessage, redact ocppRedactor, maxCaptureBytes int) (buf
 	if redact != nil {
 		msg = redact(msg)
 	}
-	return bufferedMessage{capturedAt: nowISO(), message: msg}, dropNone
+	return bufferedMessage{capturedAt: nowISO(), message: msg}, dropNone, 0
 }

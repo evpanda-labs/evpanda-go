@@ -13,7 +13,6 @@ package evpanda_test
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -234,10 +233,12 @@ func TestOCPIWireShape(t *testing.T) {
 		if reqHeaders["X-Correlation-Id"] == nil {
 			t.Fatalf("x-correlation-id was dropped: %v", reqHeaders)
 		}
-		// Body round-trips as base64.
-		decoded, err := base64.StdEncoding.DecodeString(rec["request_body"].(string))
-		if err != nil || len(decoded) == 0 {
-			t.Fatalf("request_body round-trip failed: %v", err)
+		// Body travels as UTF-8 text, with the encoding named alongside it.
+		if body, _ := rec["request_body"].(string); body == "" {
+			t.Fatalf("request_body = %v, want the captured text", rec["request_body"])
+		}
+		if enc := rec["request_body_encoding"]; enc != "utf8" {
+			t.Fatalf("request_body_encoding = %v, want utf8", enc)
 		}
 		// Absent response body is explicit null, not omitted.
 		v, present := rec["response_body"]
@@ -302,7 +303,7 @@ func TestOCPICredentialsTokenMasked(t *testing.T) {
 		return recs[a]["url"].(string) < recs[b]["url"].(string)
 	})
 	// recs[0] = /ocpi/2.2/cdrs/1, recs[1] = /ocpi/2.2/credentials
-	credReq, _ := base64.StdEncoding.DecodeString(recs[1]["request_body"].(string))
+	credReq := []byte(recs[1]["request_body"].(string))
 	var parsedReq map[string]any
 	if err := json.Unmarshal(credReq, &parsedReq); err != nil {
 		t.Fatalf("credentials request body not JSON after masking: %v", err)
@@ -313,14 +314,14 @@ func TestOCPICredentialsTokenMasked(t *testing.T) {
 	if parsedReq["url"] != "https://acme.example" {
 		t.Fatalf("masking corrupted sibling fields: %v", parsedReq)
 	}
-	credResp, _ := base64.StdEncoding.DecodeString(recs[1]["response_body"].(string))
+	credResp := []byte(recs[1]["response_body"].(string))
 	var parsedResp map[string]any
 	_ = json.Unmarshal(credResp, &parsedResp)
 	if parsedResp["data"].(map[string]any)["token"] != "[redacted]" {
 		t.Fatalf("response data.token = %v, want [redacted]", parsedResp)
 	}
 	// Non-credentials body untouched.
-	otherReq, _ := base64.StdEncoding.DecodeString(recs[0]["request_body"].(string))
+	otherReq := []byte(recs[0]["request_body"].(string))
 	if string(otherReq) != `{"token":"NOT-A-CREDENTIAL"}` {
 		t.Fatalf("non-credentials body was rewritten: %s", otherReq)
 	}
@@ -399,7 +400,7 @@ func TestOCPPSessionAndWireShape(t *testing.T) {
 		if dir != wantDirs[i] {
 			t.Fatalf("direction[%d] = %v, want %v", i, dir, wantDirs[i])
 		}
-		// Frame: base64 on MESSAGE, explicit null otherwise.
+		// Frame: UTF-8 text on MESSAGE, explicit null otherwise.
 		frame, present := rec["raw_frame"]
 		if !present {
 			t.Fatalf("raw_frame[%d] missing — must be explicit null or a value", i)
@@ -415,7 +416,10 @@ func TestOCPPSessionAndWireShape(t *testing.T) {
 		}
 	}
 
-	frame, _ := base64.StdEncoding.DecodeString(recs[1]["raw_frame"].(string))
+	frame := []byte(recs[1]["raw_frame"].(string))
+	if enc := recs[1]["raw_frame_encoding"]; enc != "utf8" {
+		t.Fatalf("raw_frame_encoding = %v, want utf8", enc)
+	}
 	if string(frame) != `[2,"id","BootNotification",{}]` {
 		t.Fatalf("raw_frame round-trip failed: %s", frame)
 	}
@@ -1148,11 +1152,8 @@ func TestCapturedBodiesDoNotAliasTheCaller(t *testing.T) {
 	waitFor(t, func() bool { return len(mock.recordsFor("/v1/ocpi")) == 1 }, 3*time.Second)
 	rec := mock.recordsFor("/v1/ocpi")[0]
 	for _, key := range []string{"request_body", "response_body"} {
-		got, err := base64.StdEncoding.DecodeString(rec[key].(string))
-		if err != nil {
-			t.Fatalf("%s not base64: %v", key, err)
-		}
-		if string(got) != `{"id":"cdr-1"}` {
+		got := rec[key].(string)
+		if got != `{"id":"cdr-1"}` {
 			t.Fatalf("%s followed the caller's buffer: %s", key, got)
 		}
 	}
@@ -1184,10 +1185,93 @@ func TestCapturedFramesDoNotAliasTheCaller(t *testing.T) {
 		if rec["raw_frame"] == nil {
 			continue // the CONNECT event
 		}
-		got, _ := base64.StdEncoding.DecodeString(rec["raw_frame"].(string))
-		if string(got) != `[2,"id","BootNotification",{}]` {
+		got := rec["raw_frame"].(string)
+		if got != `[2,"id","BootNotification",{}]` {
 			t.Fatalf("frame followed the caller's buffer: %s", got)
 		}
+	}
+}
+
+// A body that is not valid UTF-8 cannot travel as text, so it is dropped
+// and counted. The exchange around it still ships: method, URL, status and
+// headers are worth having even when the payload is not.
+func TestInvalidUTF8OCPIBodyIsDroppedNotCorrupted(t *testing.T) {
+	mock := startMockUpstream()
+	defer mock.close()
+
+	panda, err := evpanda.StartOCPI(ocpiConfig(mock.server.URL))
+	if err != nil {
+		t.Fatalf("StartOCPI: %v", err)
+	}
+	defer func() { _ = panda.Close() }()
+
+	msg := makeOCPI(0)
+	msg.Data.SetRequestBody([]byte{0xff, 0xfe, 0x00, 0x01}) // not UTF-8
+	msg.Data.SetResponseBody([]byte(`{"status_code":1000}`))
+	panda.CaptureInboundMessage(msg)
+
+	waitFor(t, func() bool { return len(mock.recordsFor("/v1/ocpi")) == 1 }, 3*time.Second)
+	rec := mock.recordsFor("/v1/ocpi")[0]
+
+	if v, present := rec["request_body"]; !present || v != nil {
+		t.Fatalf("request_body = %v, want explicit null", v)
+	}
+	if v := rec["request_body_encoding"]; v != nil {
+		t.Fatalf("request_body_encoding = %v, want null alongside an absent body", v)
+	}
+	// The good half is untouched.
+	if got := rec["response_body"]; got != `{"status_code":1000}` {
+		t.Fatalf("response_body = %v, want the captured text", got)
+	}
+	if enc := rec["response_body_encoding"]; enc != "utf8" {
+		t.Fatalf("response_body_encoding = %v, want utf8", enc)
+	}
+	// The exchange itself survived.
+	if rec["url"] == nil || rec["http_method"] != "POST" {
+		t.Fatalf("exchange was dropped with the body: %v", rec)
+	}
+
+	stats := panda.Stats()
+	if stats.BodiesDropped != 1 {
+		t.Fatalf("BodiesDropped = %d, want 1", stats.BodiesDropped)
+	}
+	if stats.Captured != 1 {
+		t.Fatalf("Captured = %d, want 1 — the exchange should still ship", stats.Captured)
+	}
+	if stats.TotalDropped() != 0 {
+		t.Fatalf("TotalDropped = %d, want 0 — no message was lost", stats.TotalDropped())
+	}
+}
+
+// An OCPP frame is the whole message, so an invalid one takes the message
+// with it. It is counted twice: once as the body, once as the message.
+func TestInvalidUTF8OCPPFrameDropsTheMessage(t *testing.T) {
+	mock := startMockUpstream()
+	defer mock.close()
+
+	panda, err := evpanda.StartOCPP(evpanda.OCPPConfig{
+		BaseConfig: evpanda.BaseConfig{
+			Endpoint: mock.server.URL, APIKey: "test-key",
+			FlushInterval: 100 * time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatalf("StartOCPP: %v", err)
+	}
+	defer func() { _ = panda.Close() }()
+
+	sess := panda.Connection(evpanda.Charger{ID: "CP-001"})
+	sess.Message([]byte{0xff, 0xfe, 0x00, 0x01}, evpanda.FromCP)
+
+	// Only the CONNECT the session recorded arrives.
+	waitFor(t, func() bool { return len(mock.recordsFor("/v1/ocpp")) == 1 }, 3*time.Second)
+
+	stats := panda.Stats()
+	if stats.BodiesDropped != 1 {
+		t.Fatalf("BodiesDropped = %d, want 1", stats.BodiesDropped)
+	}
+	if stats.DroppedOversize != 1 {
+		t.Fatalf("DroppedOversize = %d, want 1 — the message cannot ship without its frame", stats.DroppedOversize)
 	}
 }
 

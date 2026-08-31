@@ -56,6 +56,19 @@ type Stats struct {
 	// know which runtime produced the number.
 	DroppedFault uint64
 
+	// BodiesDropped counts payloads omitted because they were not valid
+	// UTF-8, which the wire contract requires.
+	//
+	// It is not part of TotalDropped, because it does not count lost
+	// messages: an OCPI exchange still ships without the offending body,
+	// carrying its method, URL, status and headers. An OCPP frame is the
+	// exception, since event_type 2 requires one, so that message is
+	// dropped as well and counted in DroppedOversize.
+	//
+	// Both protocols are JSON over UTF-8, so any value above zero means
+	// something upstream is sending payloads the protocol does not allow.
+	BodiesDropped uint64
+
 	// BufferedMessages is how many messages are awaiting delivery now.
 	BufferedMessages int
 	// BufferBytes is their accounted footprint, always at or below
@@ -78,6 +91,7 @@ type stats struct {
 	droppedEvicted       atomic.Uint64
 	droppedUndeliverable atomic.Uint64
 	droppedFault         atomic.Uint64
+	bodiesDropped        atomic.Uint64
 }
 
 // snapshot reads the counters. The reads are not atomic as a set, so a
@@ -95,6 +109,7 @@ func (s *stats) snapshot() Stats {
 		DroppedEvicted:       s.droppedEvicted.Load(),
 		DroppedUndeliverable: s.droppedUndeliverable.Load(),
 		DroppedFault:         s.droppedFault.Load(),
+		BodiesDropped:        s.bodiesDropped.Load(),
 	}
 }
 
@@ -104,6 +119,14 @@ func (s *stats) snapshot() Stats {
 func (s *stats) countCaptured() {
 	if s != nil {
 		s.captured.Add(1)
+	}
+}
+
+// countBodiesDropped charges n omitted bodies. It is separate from
+// countDrop because the reasons there all cost a whole message.
+func (s *stats) countBodiesDropped(n int) {
+	if s != nil && n > 0 {
+		s.bodiesDropped.Add(uint64(n))
 	}
 }
 
@@ -148,6 +171,7 @@ func (s Stats) sub(prev Stats) Stats {
 		DroppedEvicted:       s.DroppedEvicted - prev.DroppedEvicted,
 		DroppedUndeliverable: s.DroppedUndeliverable - prev.DroppedUndeliverable,
 		DroppedFault:         s.DroppedFault - prev.DroppedFault,
+		BodiesDropped:        s.BodiesDropped - prev.BodiesDropped,
 		BufferedMessages:     s.BufferedMessages,
 		BufferBytes:          s.BufferBytes,
 	}
@@ -169,6 +193,7 @@ func (s Stats) logAttrs() []any {
 	add("evicted", s.DroppedEvicted)
 	add("undeliverable", s.DroppedUndeliverable)
 	add("fault", s.DroppedFault)
+	add("bodies_dropped", s.BodiesDropped)
 	return append(attrs, "buffered", s.BufferedMessages, "buffer_bytes", s.BufferBytes)
 }
 
