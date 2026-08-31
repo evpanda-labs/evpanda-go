@@ -56,18 +56,16 @@ type Stats struct {
 	// know which runtime produced the number.
 	DroppedFault uint64
 
-	// BodiesDropped counts payloads omitted because they were not valid
+	// DroppedInvalidBody counts messages whose body or frame was not valid
 	// UTF-8, which the wire contract requires.
 	//
-	// It is not part of TotalDropped, because it does not count lost
-	// messages: an OCPI exchange still ships without the offending body,
-	// carrying its method, URL, status and headers. An OCPP frame is the
-	// exception, since event_type 2 requires one, so that message is
-	// dropped as well and counted in DroppedOversize.
+	// The whole message goes, not just the offending body: an exchange
+	// that arrives without the payload it describes is harder for a
+	// consumer to reason about than one that never arrives.
 	//
 	// Both protocols are JSON over UTF-8, so any value above zero means
 	// something upstream is sending payloads the protocol does not allow.
-	BodiesDropped uint64
+	DroppedInvalidBody uint64
 
 	// BufferedMessages is how many messages are awaiting delivery now.
 	BufferedMessages int
@@ -78,8 +76,8 @@ type Stats struct {
 
 // TotalDropped is the sum of every Dropped* counter.
 func (s Stats) TotalDropped() uint64 {
-	return s.DroppedInvalid + s.DroppedOversize + s.DroppedEvicted +
-		s.DroppedUndeliverable + s.DroppedFault
+	return s.DroppedInvalid + s.DroppedInvalidBody + s.DroppedOversize +
+		s.DroppedEvicted + s.DroppedUndeliverable + s.DroppedFault
 }
 
 // stats is the live counter set, shared by the chokepoint, the buffer and
@@ -91,7 +89,7 @@ type stats struct {
 	droppedEvicted       atomic.Uint64
 	droppedUndeliverable atomic.Uint64
 	droppedFault         atomic.Uint64
-	bodiesDropped        atomic.Uint64
+	droppedInvalidBody   atomic.Uint64
 }
 
 // snapshot reads the counters. The reads are not atomic as a set, so a
@@ -109,7 +107,7 @@ func (s *stats) snapshot() Stats {
 		DroppedEvicted:       s.droppedEvicted.Load(),
 		DroppedUndeliverable: s.droppedUndeliverable.Load(),
 		DroppedFault:         s.droppedFault.Load(),
-		BodiesDropped:        s.bodiesDropped.Load(),
+		DroppedInvalidBody:   s.droppedInvalidBody.Load(),
 	}
 }
 
@@ -119,14 +117,6 @@ func (s *stats) snapshot() Stats {
 func (s *stats) countCaptured() {
 	if s != nil {
 		s.captured.Add(1)
-	}
-}
-
-// countBodiesDropped charges n omitted bodies. It is separate from
-// countDrop because the reasons there all cost a whole message.
-func (s *stats) countBodiesDropped(n int) {
-	if s != nil && n > 0 {
-		s.bodiesDropped.Add(uint64(n))
 	}
 }
 
@@ -152,6 +142,8 @@ func (s *stats) counterFor(reason dropReason) *atomic.Uint64 {
 		return &s.droppedEvicted
 	case dropUndeliverable:
 		return &s.droppedUndeliverable
+	case dropInvalidBody:
+		return &s.droppedInvalidBody
 	case dropFault:
 		return &s.droppedFault
 	case dropNone:
@@ -171,7 +163,7 @@ func (s Stats) sub(prev Stats) Stats {
 		DroppedEvicted:       s.DroppedEvicted - prev.DroppedEvicted,
 		DroppedUndeliverable: s.DroppedUndeliverable - prev.DroppedUndeliverable,
 		DroppedFault:         s.DroppedFault - prev.DroppedFault,
-		BodiesDropped:        s.BodiesDropped - prev.BodiesDropped,
+		DroppedInvalidBody:   s.DroppedInvalidBody - prev.DroppedInvalidBody,
 		BufferedMessages:     s.BufferedMessages,
 		BufferBytes:          s.BufferBytes,
 	}
@@ -192,8 +184,8 @@ func (s Stats) logAttrs() []any {
 	add("oversize", s.DroppedOversize)
 	add("evicted", s.DroppedEvicted)
 	add("undeliverable", s.DroppedUndeliverable)
+	add("invalid_body", s.DroppedInvalidBody)
 	add("fault", s.DroppedFault)
-	add("bodies_dropped", s.BodiesDropped)
 	return append(attrs, "buffered", s.BufferedMessages, "buffer_bytes", s.BufferBytes)
 }
 
@@ -205,6 +197,7 @@ type dropReason int
 const (
 	dropNone dropReason = iota
 	dropInvalidIdentity
+	dropInvalidBody
 	dropOversize
 	dropEvicted
 	dropUndeliverable

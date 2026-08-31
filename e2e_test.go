@@ -1192,10 +1192,9 @@ func TestCapturedFramesDoNotAliasTheCaller(t *testing.T) {
 	}
 }
 
-// A body that is not valid UTF-8 cannot travel as text, so it is dropped
-// and counted. The exchange around it still ships: method, URL, status and
-// headers are worth having even when the payload is not.
-func TestInvalidUTF8OCPIBodyIsDroppedNotCorrupted(t *testing.T) {
+// A body that is not valid UTF-8 cannot travel as text, so the whole
+// message is dropped rather than shipped with the payload missing.
+func TestInvalidUTF8OCPIBodyDropsTheMessage(t *testing.T) {
 	mock := startMockUpstream()
 	defer mock.close()
 
@@ -1205,46 +1204,30 @@ func TestInvalidUTF8OCPIBodyIsDroppedNotCorrupted(t *testing.T) {
 	}
 	defer func() { _ = panda.Close() }()
 
-	msg := makeOCPI(0)
-	msg.Data.SetRequestBody([]byte{0xff, 0xfe, 0x00, 0x01}) // not UTF-8
-	msg.Data.SetResponseBody([]byte(`{"status_code":1000}`))
-	panda.CaptureInboundMessage(msg)
+	// A good exchange first, so the assertion below distinguishes "dropped
+	// the bad one" from "dropped everything".
+	panda.CaptureInboundMessage(makeOCPI(0))
+
+	bad := makeOCPI(1)
+	bad.Data.SetRequestBody([]byte{0xff, 0xfe, 0x00, 0x01}) // not UTF-8
+	bad.Data.SetResponseBody([]byte(`{"status_code":1000}`))
+	panda.CaptureInboundMessage(bad)
 
 	waitFor(t, func() bool { return len(mock.recordsFor("/v1/ocpi")) == 1 }, 3*time.Second)
-	rec := mock.recordsFor("/v1/ocpi")[0]
-
-	if v, present := rec["request_body"]; !present || v != nil {
-		t.Fatalf("request_body = %v, want explicit null", v)
-	}
-	if v := rec["request_body_encoding"]; v != nil {
-		t.Fatalf("request_body_encoding = %v, want null alongside an absent body", v)
-	}
-	// The good half is untouched.
-	if got := rec["response_body"]; got != `{"status_code":1000}` {
-		t.Fatalf("response_body = %v, want the captured text", got)
-	}
-	if enc := rec["response_body_encoding"]; enc != "utf8" {
-		t.Fatalf("response_body_encoding = %v, want utf8", enc)
-	}
-	// The exchange itself survived.
-	if rec["url"] == nil || rec["http_method"] != "POST" {
-		t.Fatalf("exchange was dropped with the body: %v", rec)
-	}
 
 	stats := panda.Stats()
-	if stats.BodiesDropped != 1 {
-		t.Fatalf("BodiesDropped = %d, want 1", stats.BodiesDropped)
+	if stats.DroppedInvalidBody != 1 {
+		t.Fatalf("DroppedInvalidBody = %d, want 1", stats.DroppedInvalidBody)
 	}
 	if stats.Captured != 1 {
-		t.Fatalf("Captured = %d, want 1 — the exchange should still ship", stats.Captured)
+		t.Fatalf("Captured = %d, want 1 — only the good exchange", stats.Captured)
 	}
-	if stats.TotalDropped() != 0 {
-		t.Fatalf("TotalDropped = %d, want 0 — no message was lost", stats.TotalDropped())
+	if stats.TotalDropped() != 1 {
+		t.Fatalf("TotalDropped = %d, want 1", stats.TotalDropped())
 	}
 }
 
-// An OCPP frame is the whole message, so an invalid one takes the message
-// with it. It is counted twice: once as the body, once as the message.
+// The same rule for an OCPP frame, which is the whole message anyway.
 func TestInvalidUTF8OCPPFrameDropsTheMessage(t *testing.T) {
 	mock := startMockUpstream()
 	defer mock.close()
@@ -1266,12 +1249,8 @@ func TestInvalidUTF8OCPPFrameDropsTheMessage(t *testing.T) {
 	// Only the CONNECT the session recorded arrives.
 	waitFor(t, func() bool { return len(mock.recordsFor("/v1/ocpp")) == 1 }, 3*time.Second)
 
-	stats := panda.Stats()
-	if stats.BodiesDropped != 1 {
-		t.Fatalf("BodiesDropped = %d, want 1", stats.BodiesDropped)
-	}
-	if stats.DroppedOversize != 1 {
-		t.Fatalf("DroppedOversize = %d, want 1 — the message cannot ship without its frame", stats.DroppedOversize)
+	if got := panda.Stats().DroppedInvalidBody; got != 1 {
+		t.Fatalf("DroppedInvalidBody = %d, want 1", got)
 	}
 }
 

@@ -62,7 +62,7 @@ func TestPrepareOCPIDrops(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			env, reason, _ := prepareOCPI(tc.msg, passthroughOCPI, 10)
+			env, reason := prepareOCPI(tc.msg, passthroughOCPI, 10)
 			if reason != tc.want {
 				t.Fatalf("prepareOCPI reason = %v, want %v", reason, tc.want)
 			}
@@ -105,7 +105,7 @@ func TestPrepareOCPPDrops(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			env, reason, _ := prepareOCPP(tc.msg, passthroughOCPP, 10)
+			env, reason := prepareOCPP(tc.msg, passthroughOCPP, 10)
 			if reason != tc.want {
 				t.Fatalf("prepareOCPP reason = %v, want %v", reason, tc.want)
 			}
@@ -123,7 +123,7 @@ func TestPrepareRunsTheRedactor(t *testing.T) {
 		m.Data.URL = "redacted"
 		return m
 	}
-	env, reason, _ := prepareOCPI(ocpiMessage{
+	env, reason := prepareOCPI(ocpiMessage{
 		Identity: validPlatform(),
 		Data:     HTTPExchange{URL: "/ocpi/2.2/cdrs"},
 	}, redact, 10)
@@ -138,7 +138,7 @@ func TestPrepareRunsTheRedactor(t *testing.T) {
 // A nil redactor means "nothing to redact" — the normal case for OCPP.
 func TestPrepareSkipsNilRedactor(t *testing.T) {
 	frame := []byte(`[2,"id","Heartbeat",{}]`)
-	env, reason, _ := prepareOCPP(ocppMessage{
+	env, reason := prepareOCPP(ocppMessage{
 		EventType: ocppEventTypeMessage,
 		Identity:  Charger{ID: "CP-001"},
 		Direction: FromCP,
@@ -182,7 +182,7 @@ func TestRedactorPresenceByProtocol(t *testing.T) {
 // here at the chokepoint where it actually happens.
 func TestChokepointTakesOwnership(t *testing.T) {
 	src := []byte(`{"id":"cdr-1"}`)
-	env, reason, _ := prepareOCPI(ocpiMessage{
+	env, reason := prepareOCPI(ocpiMessage{
 		Identity: validPlatform(),
 		Data: HTTPExchange{
 			Method: "POST", URL: "/ocpi/2.2/cdrs",
@@ -203,7 +203,7 @@ func TestChokepointTakesOwnership(t *testing.T) {
 	}
 
 	frame := []byte(`[2,"id","Heartbeat",{}]`)
-	env, _, _ = prepareOCPP(ocppMessage{
+	env, _ = prepareOCPP(ocppMessage{
 		EventType: ocppEventTypeMessage,
 		Identity:  Charger{ID: "CP-001"},
 		Direction: FromCP, Payload: frame,
@@ -224,7 +224,7 @@ func TestRedactorMayMutateInPlace(t *testing.T) {
 		}
 		return m
 	}
-	env, reason, _ := prepareOCPI(ocpiMessage{
+	env, reason := prepareOCPI(ocpiMessage{
 		Identity: validPlatform(),
 		Data:     HTTPExchange{Method: "POST", URL: "/x", RequestBody: src},
 	}, inPlace, 1024)
