@@ -342,5 +342,7 @@ debugging — not on a request path.
 ## Documentation
 
 - [API reference on pkg.go.dev](https://pkg.go.dev/github.com/evpanda-labs/evpanda-go)
-- [Architecture and design notes](https://claude.ai/code/artifact/7ca90c40-e7f0-4dad-b833-74e82e86fa60)
-  — how it works, and why
+- [evpanda-node](https://github.com/evpanda-labs/evpanda-node) — the Node SDK,
+  same pipeline and the same wire records
+- [evpanda-py](https://github.com/evpanda-labs/evpanda-py) — the Python SDK,
+  same pipeline and the same wire records
