@@ -132,6 +132,16 @@ call returns.
 
 `StatusCode` and both bodies are optional; header maps may be nil.
 
+Bodies travel as UTF-8 text, with `request_body_encoding` and
+`response_body_encoding` naming the encoding alongside them. Both protocols
+are JSON over UTF-8, so that is always `"utf8"` today; the contract reserves
+`"base64"` for payloads that are not text.
+
+A message whose body is not valid UTF-8 is dropped rather than shipped as
+mojibake, and counted in `DroppedInvalidBody`. The whole message goes, not
+just the body: an exchange that arrives without the payload it describes is
+harder to reason about than one that never arrives.
+
 ## HTTP adapters
 
 The `ocpi` package wraps stdlib HTTP so you don't have to assemble exchanges
@@ -288,7 +298,8 @@ safe on an inert or closed client. Each counter maps to one root cause:
 ```go
 stats := panda.Stats()
 // {Captured:40120 DroppedInvalid:0 DroppedOversize:0 DroppedEvicted:9402
-//  DroppedUndeliverable:0 DroppedFault:0 BufferedMessages:2 BufferBytes:528}
+//  DroppedInvalidBody:0 DroppedUndeliverable:0 DroppedFault:0
+//  BufferedMessages:2 BufferBytes:528}
 ```
 
 | Counter | What a high value means |
@@ -298,6 +309,7 @@ stats := panda.Stats()
 | `DroppedOversize` | Bodies exceed `MaxCaptureBytes` |
 | `DroppedEvicted` | Upstream can't keep up, or the buffer is undersized |
 | `DroppedUndeliverable` | Network, API key, or ingestion fault |
+| `DroppedInvalidBody` | A body or frame that was not valid UTF-8 |
 | `DroppedFault` | A bug in the SDK — please report it |
 
 It is a pull-based snapshot, so it feeds Prometheus, OpenTelemetry or a log
@@ -330,5 +342,7 @@ debugging — not on a request path.
 ## Documentation
 
 - [API reference on pkg.go.dev](https://pkg.go.dev/github.com/evpanda-labs/evpanda-go)
-- [Architecture and design notes](https://claude.ai/code/artifact/7ca90c40-e7f0-4dad-b833-74e82e86fa60)
-  — how it works, and why
+- [evpanda-node](https://github.com/evpanda-labs/evpanda-node) — the Node SDK,
+  same pipeline and the same wire records
+- [evpanda-py](https://github.com/evpanda-labs/evpanda-py) — the Python SDK,
+  same pipeline and the same wire records

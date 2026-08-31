@@ -12,7 +12,6 @@ package evpanda
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -90,8 +89,14 @@ type ocpiIngest struct {
 	ResponseStatusCode *int            `json:"response_status_code"`
 	RequestHeaders     json.RawMessage `json:"request_headers"`
 	RequestBody        *string         `json:"request_body"`
-	ResponseHeaders    json.RawMessage `json:"response_headers"`
-	ResponseBody       *string         `json:"response_body"`
+	// RequestBodyEncoding names how RequestBody is encoded. It is null
+	// when there is no body, and "utf8" otherwise; the contract reserves
+	// "base64" for payloads that are not text, which neither protocol
+	// produces today.
+	RequestBodyEncoding  *string         `json:"request_body_encoding"`
+	ResponseHeaders      json.RawMessage `json:"response_headers"`
+	ResponseBody         *string         `json:"response_body"`
+	ResponseBodyEncoding *string         `json:"response_body_encoding"`
 }
 
 type ocppIngest struct {
@@ -103,25 +108,30 @@ type ocppIngest struct {
 	EventType    int     `json:"event_type"`
 	Direction    *string `json:"direction"`
 	RawFrame     *string `json:"raw_frame"`
+	// RawFrameEncoding names how RawFrame is encoded, on the same terms
+	// as the OCPI body encodings above.
+	RawFrameEncoding *string `json:"raw_frame_encoding"`
 }
 
 // record maps an OCPI capture onto its flat ingestion record. It is the
 // message implementation for ocpiMessage.
 func (m ocpiMessage) record(capturedAt string) any {
 	return ocpiIngest{
-		CapturedAt:         capturedAt,
-		PlatformID:         m.Identity.ID,
-		PlatformName:       m.Identity.Name,
-		TenantID:           optStr(m.Identity.TenantID),
-		TenantName:         optStr(m.Identity.TenantName),
-		Direction:          string(m.Direction),
-		HTTPMethod:         m.Data.Method,
-		URL:                m.Data.URL,
-		ResponseStatusCode: optInt(m.Data.StatusCode),
-		RequestHeaders:     headersJSON(m.Data.RequestHeaders),
-		RequestBody:        bodyB64(m.Data.RequestBody),
-		ResponseHeaders:    headersJSON(m.Data.ResponseHeaders),
-		ResponseBody:       bodyB64(m.Data.ResponseBody),
+		CapturedAt:           capturedAt,
+		PlatformID:           m.Identity.ID,
+		PlatformName:         m.Identity.Name,
+		TenantID:             optStr(m.Identity.TenantID),
+		TenantName:           optStr(m.Identity.TenantName),
+		Direction:            string(m.Direction),
+		HTTPMethod:           m.Data.Method,
+		URL:                  m.Data.URL,
+		ResponseStatusCode:   optInt(m.Data.StatusCode),
+		RequestHeaders:       headersJSON(m.Data.RequestHeaders),
+		RequestBody:          bodyText(m.Data.RequestBody),
+		RequestBodyEncoding:  bodyEncoding(m.Data.RequestBody),
+		ResponseHeaders:      headersJSON(m.Data.ResponseHeaders),
+		ResponseBody:         bodyText(m.Data.ResponseBody),
+		ResponseBodyEncoding: bodyEncoding(m.Data.ResponseBody),
 	}
 }
 
@@ -129,14 +139,15 @@ func (m ocpiMessage) record(capturedAt string) any {
 // message implementation for ocppMessage.
 func (m ocppMessage) record(capturedAt string) any {
 	return ocppIngest{
-		ChargerID:    m.Identity.ID,
-		ConnectionID: m.ConnectionID,
-		TenantID:     optStr(m.Identity.TenantID),
-		TenantName:   optStr(m.Identity.TenantName),
-		CapturedAt:   capturedAt,
-		EventType:    int(m.EventType),
-		Direction:    optStr(string(m.Direction)),
-		RawFrame:     bodyB64(m.Payload),
+		ChargerID:        m.Identity.ID,
+		ConnectionID:     m.ConnectionID,
+		TenantID:         optStr(m.Identity.TenantID),
+		TenantName:       optStr(m.Identity.TenantName),
+		CapturedAt:       capturedAt,
+		EventType:        int(m.EventType),
+		Direction:        optStr(string(m.Direction)),
+		RawFrame:         bodyText(m.Payload),
+		RawFrameEncoding: bodyEncoding(m.Payload),
 	}
 }
 
@@ -153,16 +164,37 @@ func headersJSON(h map[string]string) json.RawMessage {
 	return b
 }
 
-// bodyB64 base64-encodes a body or frame, or returns nil to send null
-// when empty. Every byte payload the SDK ships goes through this — OCPI
-// HTTP bodies and OCPP wire frames alike. The ingest server decodes
-// before persistence, so consumers see plain UTF-8; encoding keeps the
-// wire contract uniform across protocols and binary-safe.
-func bodyB64(b []byte) *string {
+// bodyText renders a captured body or frame as the UTF-8 string the wire
+// contract carries, or nil to send null when there is nothing to send.
+//
+// No encoding step: both protocols are JSON over UTF-8, so a body is
+// already text by the time it gets here. The capture chokepoint drops any
+// body that is not valid UTF-8 (see prepareOCPI and prepareOCPP), which is
+// what lets this be a plain conversion rather than a lossy one — Go's JSON
+// encoder would otherwise substitute U+FFFD for the invalid bytes and ship
+// corruption that nobody could tell from the real payload.
+func bodyText(b []byte) *string {
 	if len(b) == 0 {
 		return nil
 	}
-	s := base64.StdEncoding.EncodeToString(b)
+	s := string(b)
+	return &s
+}
+
+// encodingUTF8 is the only body encoding the SDK emits. The contract also
+// defines "base64", for payloads that are not text; nothing in OCPI 2.2.1
+// or OCPP 1.6-J produces one, so the SDK drops such a body rather than
+// encoding it.
+const encodingUTF8 = "utf8"
+
+// bodyEncoding names the encoding of a body, or nil when there is no body
+// to describe. Sending it explicitly keeps the record self-describing:
+// a reader never has to infer the encoding from the bytes.
+func bodyEncoding(b []byte) *string {
+	if len(b) == 0 {
+		return nil
+	}
+	s := encodingUTF8
 	return &s
 }
 

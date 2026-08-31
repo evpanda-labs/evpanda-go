@@ -8,7 +8,6 @@ package ocpi_test
 
 import (
 	"context"
-	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +35,8 @@ func startOCPI(t *testing.T, mock *mockUpstream) *evpanda.OCPIClient {
 	return panda
 }
 
-// decodeBody returns a captured base64 body as a string, or "" for null.
+// decodeBody returns a captured body as a string, or "" for null. Bodies
+// travel as UTF-8 text, so this only asserts the shape.
 func decodeBody(t *testing.T, rec map[string]any, key string) string {
 	t.Helper()
 	raw, ok := rec[key]
@@ -46,11 +46,11 @@ func decodeBody(t *testing.T, rec map[string]any, key string) string {
 	if raw == nil {
 		return ""
 	}
-	decoded, err := base64.StdEncoding.DecodeString(raw.(string))
-	if err != nil {
-		t.Fatalf("%s is not base64: %v", key, err)
+	body, ok := raw.(string)
+	if !ok {
+		t.Fatalf("%s = %T, want string", key, raw)
 	}
-	return string(decoded)
+	return body
 }
 
 // echoHandler reads the request body and answers with a fixed JSON body,

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // ErrDrainIncomplete is returned by Close and Shutdown when the drain
@@ -262,6 +263,15 @@ func prepareOCPI(msg ocpiMessage, redact ocpiRedactor, maxCaptureBytes int) (buf
 	if len(msg.Data.RequestBody) > maxCaptureBytes || len(msg.Data.ResponseBody) > maxCaptureBytes {
 		return bufferedMessage{}, dropOversize
 	}
+	// A body that is not valid UTF-8 cannot travel: the wire contract
+	// carries it as text, and shipping it anyway would substitute U+FFFD
+	// for the invalid bytes and store corruption. The whole message goes,
+	// not just the body — an exchange that arrives without the payload it
+	// describes is harder for a consumer to reason about than one that
+	// never arrives.
+	if !utf8.Valid(msg.Data.RequestBody) || !utf8.Valid(msg.Data.ResponseBody) {
+		return bufferedMessage{}, dropInvalidBody
+	}
 	// Take ownership before redacting. From here the bytes are the SDK's,
 	// so a redactor may rewrite a body in place, and the host may reuse
 	// its own buffer the moment the capture call returns.
@@ -284,6 +294,9 @@ func prepareOCPP(msg ocppMessage, redact ocppRedactor, maxCaptureBytes int) (buf
 	}
 	if msg.EventType == ocppEventTypeMessage && (len(msg.Payload) == 0 || msg.Direction == "") {
 		return bufferedMessage{}, dropOversize
+	}
+	if !utf8.Valid(msg.Payload) {
+		return bufferedMessage{}, dropInvalidBody
 	}
 	msg.Payload = cloneBody(msg.Payload) // same ownership transfer as OCPI
 	// nil is the normal case for OCPP: there is nothing to redact, so
